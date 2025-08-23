@@ -1,0 +1,1 @@
+{"root":["../src/index.ts","../src/classes/peer.ts","../src/classes/room.ts","../src/helpers/config.ts","../src/helpers/transport.ts","../src/helpers/worker.ts"],"version":"5.9.2"}
