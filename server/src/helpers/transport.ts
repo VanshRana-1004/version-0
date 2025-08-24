@@ -1,6 +1,7 @@
 import * as mediasoup from 'mediasoup';
 
 export async function createWebRtcTransport(router: mediasoup.types.Router){
+    console.log(process.env.ANNOUNCED_IP);
     const webRtcTransport_Options={
         listenIps:[
             {
@@ -12,7 +13,9 @@ export async function createWebRtcTransport(router: mediasoup.types.Router){
         enableTcp:true,
         preferUdp:true,
         initialAvailableOutgoingBitrate: 1000000,
-        maxIncomingBitrate: 1500000
+        maxIncomingBitrate: 1500000,
+        minPort: 40000,
+        maxPort: 41999
     }
     const transport=await router.createWebRtcTransport(webRtcTransport_Options);
     console.log('Transport created successfully with id : ',transport.id);
