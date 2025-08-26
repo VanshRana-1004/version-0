@@ -7,6 +7,9 @@ import { mediaCodecs } from './helpers/config';
 import Room from './classes/room';
 import Peer from './classes/peer';
 import { createWebRtcTransport } from './helpers/transport';
+import { PortPool } from './helpers/portpool';
+
+export const rtpPortPool = new PortPool(42000, 43999);
 
 const app=express();
 app.use(express.json());
@@ -29,10 +32,14 @@ const io = new SocketIOServer(server, {
   }
 }); 
 
-function cleanupPeer(socketId: string, roomId: string) {
+async function cleanupPeer(socketId: string, roomId: string) {
   const room = roomMap[roomId];
   const peer = peerMap[socketId];
   if (!room || !peer) return;
+
+  if(room.recording==1){
+    await peer.closeRecordingConsumers();
+  }
 
   if(peer.userId===room.host){
     const otherPeer=room.peers.filter(p=>p.userId!==peer.userId);
@@ -90,6 +97,7 @@ function cleanupPeer(socketId: string, roomId: string) {
 
   console.log(`[server] peer ${socketId} removed from room ${roomId}`);
   if (room.peers.length === 0) {
+    if(room.recording==1) room.closePlainTransports();
     console.log(`[server] room ${roomId} is now empty, cleaning up`);
     delete roomMap[roomId];
   }
@@ -97,7 +105,7 @@ function cleanupPeer(socketId: string, roomId: string) {
 
 io.on('connect', async (socket: Socket) => {
 
-    socket.on('join-room',({roomId,name,userId},callback)=>{
+    socket.on('join-room',async ({roomId,name,userId},callback)=>{
       const room=roomMap[roomId];
       socket.join(roomId);
       if(!room) return callback({error : 'room not found'})
@@ -124,7 +132,10 @@ io.on('connect', async (socket: Socket) => {
       socket.to(roomId).emit('new-peer', { peers: peerCount-1});
       socket.to(roomId).emit('joined',{name : name});
       socket.emit('new-peer', { peers: peerCount-1 });
-      if(room.recording==1) socket.emit('recording',{record : 1});
+      if(room.recording==1){
+        await room.createPlainTransports();
+        socket.emit('recording',{record : 1});
+      } 
       if(room.screen!=''){
         console.log(room.screen)
         socket.emit('screen-noti',{name : room.screen});
@@ -294,7 +305,7 @@ io.on('connect', async (socket: Socket) => {
       }
     });
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect",async () => {
       console.log('request to leave the room');
       const peer = peerMap[socket.id];
       if (!peer) return;
@@ -302,7 +313,7 @@ io.on('connect', async (socket: Socket) => {
         roomMap[rid].peers.includes(peer)
       );
       if (roomId) {
-        cleanupPeer(socket.id, roomId);
+        await cleanupPeer(socket.id, roomId);
       }
     });
     
@@ -310,11 +321,12 @@ io.on('connect', async (socket: Socket) => {
       socket.to(roomId).emit('chat', { name, time, msg });
     })
 
-    socket.on('recording',({roomId,record})=>{
+    socket.on('recording',async ({roomId,record})=>{
       const room=roomMap[roomId];
       if(record){
         if(room.recording===0){
           room.recording=1;
+          await room.createPlainTransports();
           socket.emit('recording',{record: 1});
           socket.to(roomId).emit('recording',{record: 1});
         } 
@@ -324,6 +336,7 @@ io.on('connect', async (socket: Socket) => {
       } 
       else{
         room.recording=-1;
+        await room.closePlainTransports();
         socket.emit('recording',{record : 0});
         socket.to(roomId).emit('recording',{record : 0})
       }
@@ -365,4 +378,4 @@ app.post('/join-call',async (req,res)=>{
     catch(e){
         res.status(500).json({ message : 'error while joining room' });
     }
-})
+}) 

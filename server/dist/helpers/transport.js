@@ -2,18 +2,21 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createWebRtcTransport = createWebRtcTransport;
 async function createWebRtcTransport(router) {
+    console.log(process.env.ANNOUNCED_IP);
     const webRtcTransport_Options = {
         listenIps: [
             {
                 ip: '0.0.0.0',
-                announcedIp: '192.168.43.195'
+                announcedIp: process.env.ANNOUNCED_IP || '127.0.0.1'
             }
         ],
         enableUdp: true,
         enableTcp: true,
         preferUdp: true,
         initialAvailableOutgoingBitrate: 1000000,
-        maxIncomingBitrate: 1500000
+        maxIncomingBitrate: 1500000,
+        minPort: 40000,
+        maxPort: 41999
     };
     const transport = await router.createWebRtcTransport(webRtcTransport_Options);
     console.log('Transport created successfully with id : ', transport.id);

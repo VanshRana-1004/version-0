@@ -36,6 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.rtpPortPool = void 0;
 const http = __importStar(require("http"));
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
@@ -45,6 +46,8 @@ const config_1 = require("./helpers/config");
 const room_1 = __importDefault(require("./classes/room"));
 const peer_1 = __importDefault(require("./classes/peer"));
 const transport_1 = require("./helpers/transport");
+const portpool_1 = require("./helpers/portpool");
+exports.rtpPortPool = new portpool_1.PortPool(42000, 43999);
 const app = (0, express_1.default)();
 app.use(express_1.default.json());
 app.use((0, cors_1.default)({
@@ -62,11 +65,14 @@ const io = new socket_io_1.Server(server, {
         origin: '*',
     }
 });
-function cleanupPeer(socketId, roomId) {
+async function cleanupPeer(socketId, roomId) {
     const room = roomMap[roomId];
     const peer = peerMap[socketId];
     if (!room || !peer)
         return;
+    if (room.recording == 1) {
+        await peer.closeRecordingConsumers();
+    }
     if (peer.userId === room.host) {
         const otherPeer = room.peers.filter(p => p.userId !== peer.userId);
         console.log('host is leaving room', roomId);
@@ -119,12 +125,14 @@ function cleanupPeer(socketId, roomId) {
     io.to(roomId).emit("peer-left", { name });
     console.log(`[server] peer ${socketId} removed from room ${roomId}`);
     if (room.peers.length === 0) {
+        if (room.recording == 1)
+            room.closePlainTransports();
         console.log(`[server] room ${roomId} is now empty, cleaning up`);
         delete roomMap[roomId];
     }
 }
 io.on('connect', async (socket) => {
-    socket.on('join-room', ({ roomId, name, userId }, callback) => {
+    socket.on('join-room', async ({ roomId, name, userId }, callback) => {
         const room = roomMap[roomId];
         socket.join(roomId);
         if (!room)
@@ -155,8 +163,10 @@ io.on('connect', async (socket) => {
         socket.to(roomId).emit('new-peer', { peers: peerCount - 1 });
         socket.to(roomId).emit('joined', { name: name });
         socket.emit('new-peer', { peers: peerCount - 1 });
-        if (room.recording == 1)
+        if (room.recording == 1) {
+            await room.createPlainTransports();
             socket.emit('recording', { record: 1 });
+        }
         if (room.screen != '') {
             console.log(room.screen);
             socket.emit('screen-noti', { name: room.screen });
@@ -317,24 +327,25 @@ io.on('connect', async (socket) => {
             await consumer.resume();
         }
     });
-    socket.on("disconnect", () => {
+    socket.on("disconnect", async () => {
         console.log('request to leave the room');
         const peer = peerMap[socket.id];
         if (!peer)
             return;
         const roomId = Object.keys(roomMap).find((rid) => roomMap[rid].peers.includes(peer));
         if (roomId) {
-            cleanupPeer(socket.id, roomId);
+            await cleanupPeer(socket.id, roomId);
         }
     });
     socket.on('chat', ({ roomId, name, time, msg }) => {
         socket.to(roomId).emit('chat', { name, time, msg });
     });
-    socket.on('recording', ({ roomId, record }) => {
+    socket.on('recording', async ({ roomId, record }) => {
         const room = roomMap[roomId];
         if (record) {
             if (room.recording === 0) {
                 room.recording = 1;
+                await room.createPlainTransports();
                 socket.emit('recording', { record: 1 });
                 socket.to(roomId).emit('recording', { record: 1 });
             }
@@ -344,6 +355,7 @@ io.on('connect', async (socket) => {
         }
         else {
             room.recording = -1;
+            await room.closePlainTransports();
             socket.emit('recording', { record: 0 });
             socket.to(roomId).emit('recording', { record: 0 });
         }
