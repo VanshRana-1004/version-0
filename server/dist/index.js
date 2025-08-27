@@ -164,7 +164,7 @@ io.on('connect', async (socket) => {
         socket.to(roomId).emit('joined', { name: name });
         socket.emit('new-peer', { peers: peerCount - 1 });
         if (room.recording == 1) {
-            await room.createPlainTransports();
+            setTimeout(async () => { await room.createPlainTransportsForPeer(peer); }, 2000);
             socket.emit('recording', { record: 1 });
         }
         if (room.screen != '') {

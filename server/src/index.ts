@@ -133,7 +133,7 @@ io.on('connect', async (socket: Socket) => {
       socket.to(roomId).emit('joined',{name : name});
       socket.emit('new-peer', { peers: peerCount-1 });
       if(room.recording==1){
-        await room.createPlainTransports();
+        setTimeout(async()=>{await room.createPlainTransportsForPeer(peer)},2000);
         socket.emit('recording',{record : 1});
       } 
       if(room.screen!=''){
@@ -191,7 +191,6 @@ io.on('connect', async (socket: Socket) => {
     })
 
     socket.on('produce', async ({ roomId,transportId, kind, rtpParameters, appData }, callback) => {
-      
       console.log('request to create producer');  
       const room=roomMap[roomId];
       if(!room) return callback({error : 'room not found'})
@@ -206,7 +205,7 @@ io.on('connect', async (socket: Socket) => {
       else if (appData.mediaTag === 'mic-audio') {
         peerMap[socket.id].producers.mic = producer;
         console.log('mic producer set')
-        }
+      }
       else if (appData.mediaTag === 'screen-video') {
         peerMap[socket.id].producers.screen = producer;
       }
@@ -214,6 +213,7 @@ io.on('connect', async (socket: Socket) => {
         peerMap[socket.id].producers.saudio = producer;
       }
       
+
       console.log('producer created successfully');
       callback({ id: producer.id });
       
