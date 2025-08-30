@@ -1,10 +1,8 @@
 import { Router } from "mediasoup/node/lib/RouterTypes";
 import Peer from "./peer";
 import { AppData } from "mediasoup/node/lib/types";
-import { startGStreamer } from "../helpers/gstreamer";
 import { rtpPortPool } from "..";
-import { ChildProcessByStdio } from "child_process";
-import { Readable } from "stream";
+import { ChildProcessWithoutNullStreams } from "child_process";
 
 export interface ConsumerInfo{
     peerId: string;
@@ -15,6 +13,7 @@ export interface ConsumerInfo{
     clockRate: number;
     ssrc: number;
     port: number;
+    profileLevelId:string 
 }
 
 class Room{
@@ -25,7 +24,7 @@ class Room{
     public host : string;
     public orgHost : string; 
     public recording : number;
-    public gstProcess: ChildProcessByStdio<null, null, Readable> | null;
+    public pipeline: ChildProcessWithoutNullStreams | null;
     public consumersInfo : ConsumerInfo[];
 
     constructor(roomId : string, router : Router, userId : string){
@@ -36,7 +35,7 @@ class Room{
         this.peers=[];
         this.screen='';
         this.recording=0;
-        this.gstProcess=null
+        this.pipeline=null
         this.consumersInfo=[];
     }
 
@@ -101,15 +100,23 @@ class Room{
             console.warn("No RTP streams to record yet");
             return;
         }
-        this.gstProcess=startGStreamer(this.consumersInfo, `room-${this.roomId}.mp4`);
+        // this.pipeline = new GStreamerRecorder(this.consumersInfo);
+        // if (!this.pipeline) {
+        //     console.warn("No pipeline ready for recording");
+        //     return;
+        // }
+        // const filePath = this.pipeline.start();
+        // console.log(`Recording started at ${filePath}`);
     }
 
     async stopRecording() {
-        if (this.gstProcess) {
-            this.gstProcess.kill("SIGINT");
-            this.gstProcess = null;
-            console.log("Stopped GStreamer recording");
-        }
+        // if (!this.pipeline) {
+        //     console.warn("No pipeline to stop");
+        //     return;
+        // }
+        // const result = await this.pipeline.stop();
+        // console.log(result);
+        // this.pipeline = null;
     }
 
     async getPlainTransport(){
@@ -117,7 +124,7 @@ class Room{
         const transport=await this.router.createPlainTransport({
             listenIp:{ip:'0.0.0.0',announcedIp:process.env.ANNOUNCED_IP},
             rtcpMux:true,
-            comedia:true
+            comedia:false,
         })
         return transport;
     }
@@ -127,7 +134,7 @@ class Room{
         if(!peer.audioPort){
             peer.audioPlainTransport=await this.getPlainTransport();
             const audioPort=rtpPortPool.acquirePort();
-            await peer.audioPlainTransport?.connect({ ip: "127.0.0.1", port: audioPort });
+            console.log('audio port connected to plain transport: ',audioPort);
             peer.audioPort=audioPort;
             if(peer.audioPlainTransport && peer.producers.mic){
                 const audioConsumer=await peer.audioPlainTransport.consume({
@@ -135,15 +142,22 @@ class Room{
                     rtpCapabilities: this.router.rtpCapabilities,
                     paused: false
                 });
-                peer.audioConsumer=audioConsumer;
+                peer.audioConsumer=audioConsumer;   
                 await peer.audioConsumer.resume();
+                await peer.audioPlainTransport.connect({ ip: "127.0.0.1", port: audioPort });
+                console.log("PlainTransport tuple:", peer.audioPlainTransport.tuple);
                 console.log('for audio done');
+                console.log("audio PlainTransport params:", {
+                    ip: peer.audioPlainTransport?.tuple.localIp,
+                    port: peer.audioPlainTransport?.tuple.localPort,
+                    rtcpPort: peer.audioPlainTransport?.rtcpTuple?.localPort,
+                });
             }
         }
         if(!peer.videoPort){
             peer.videoPlainTransport=await this.getPlainTransport();
             const videoPort=rtpPortPool.acquirePort();
-            await peer.videoPlainTransport?.connect({ ip: "127.0.0.1", port: videoPort });
+            console.log('video port connected to plain transport: ',videoPort);
             peer.videoPort=videoPort;
             if(peer.videoPlainTransport && peer.producers.cam){
                 const videoConsumer=await peer.videoPlainTransport.consume({
@@ -153,7 +167,14 @@ class Room{
                 });
                 peer.videoConsumer=videoConsumer;
                 await peer.videoConsumer.resume();
+                await peer.videoPlainTransport.connect({ ip: "127.0.0.1", port: videoPort });
+                console.log("PlainTransport tuple:", peer.videoPlainTransport.tuple);
                 console.log('for video done')
+                console.log("video PlainTransport params:", {
+                    ip: peer.videoPlainTransport?.tuple.localIp,
+                    port: peer.videoPlainTransport?.tuple.localPort,
+                    rtcpPort: peer.videoPlainTransport?.rtcpTuple?.localPort,
+                });
             }
         }
     }
@@ -174,25 +195,26 @@ class Room{
             console.log('----------------------creating consumers-----------------------')
         }
         await this.getRtpStreamsInfo();
-        // setTimeout(async()=>await this.startRecording(),1000)
+        await this.startRecording();
     }
 
     async getRtpStreamsInfoforPeer(peer : Peer){
-        if(peer.audioPlainTransport && peer.audioConsumer){
-            const rtp=peer.audioConsumer?.rtpParameters;
-            const codec=rtp?.codecs[0];
-            this.consumersInfo.push({
-                peerId:peer.userId,
-                consumerId:peer.audioConsumer.id,
-                kind:'audio',
-                codec:codec.mimeType,
-                payloadType:codec.payloadType,
-                clockRate:codec.clockRate,
-                ssrc:(rtp.encodings)?rtp.encodings[0].ssrc!:0,
-                port:peer.audioPort!
-            })
-            console.log('consumerId : ',peer.audioConsumer.id,' audioPort : ',peer.audioPort);
-        }
+        // if(peer.audioPlainTransport && peer.audioConsumer){
+        //     const rtp=peer.audioConsumer?.rtpParameters;
+        //     const codec=rtp?.codecs[0];
+        //     this.consumersInfo.push({
+        //         peerId:peer.userId,
+        //         consumerId:peer.audioConsumer.id,
+        //         kind:'audio',
+        //         codec:codec.mimeType,
+        //         payloadType:codec.payloadType,
+        //         clockRate:codec.clockRate,
+        //         ssrc:(rtp.encodings)?rtp.encodings[0].ssrc!:0,
+        //         port:peer.audioPort!,
+        //         profileLevelId: typeof codec?.parameters?.["profile-level-id"] === "string" ? codec.parameters["profile-level-id"] : 'N/A'
+        //     })
+        //     console.log('consumerId : ',peer.audioConsumer.id,' audioPort : ',peer.audioPort);
+        // }
 
         if(peer.videoPlainTransport && peer.videoConsumer){
             const rtp=peer.videoConsumer?.rtpParameters;
@@ -205,8 +227,10 @@ class Room{
                 payloadType:codec.payloadType,
                 clockRate:codec.clockRate,
                 ssrc:(rtp.encodings)?rtp.encodings[0].ssrc!:0,
-                port:peer.videoPort!
+                port:peer.videoPort!,
+                profileLevelId: typeof codec?.parameters?.["profile-level-id"] === "string" ? codec.parameters["profile-level-id"] : 'N/A'
             })
+            console.log("RTP Parameters:", JSON.stringify(peer.videoConsumer?.rtpParameters, null, 2));
             console.log('consumerId : ',peer.videoConsumer.id,' videoPort : ',peer.videoPort);
         }
     }
@@ -231,6 +255,7 @@ class Room{
             rtpPortPool.releasePort(peer.videoPort!);
             peer.videoPort=null;
         }
+        console.log('closing recording');
     }
 }
 

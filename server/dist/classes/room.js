@@ -1,6 +1,5 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const gstreamer_1 = require("../helpers/gstreamer");
 const __1 = require("..");
 class Room {
     constructor(roomId, router, userId) {
@@ -11,7 +10,7 @@ class Room {
         this.peers = [];
         this.screen = '';
         this.recording = 0;
-        this.gstProcess = null;
+        this.pipeline = null;
         this.consumersInfo = [];
     }
     getProducers() {
@@ -72,14 +71,23 @@ class Room {
             console.warn("No RTP streams to record yet");
             return;
         }
-        this.gstProcess = (0, gstreamer_1.startGStreamer)(this.consumersInfo, `room-${this.roomId}.mp4`);
+        // this.pipeline = new GStreamerRecorder(this.consumersInfo);
+        // if (!this.pipeline) {
+        //     console.warn("No pipeline ready for recording");
+        //     return;
+        // }
+        // const filePath = this.pipeline.start();
+        // console.log(`Recording started at ${filePath}`);
+        // startGStreamerPipeline(this.consumersInfo);
     }
     async stopRecording() {
-        if (this.gstProcess) {
-            this.gstProcess.kill("SIGINT");
-            this.gstProcess = null;
-            console.log("Stopped GStreamer recording");
-        }
+        // if (!this.pipeline) {
+        //     console.warn("No pipeline to stop");
+        //     return;
+        // }
+        // const result = await this.pipeline.stop();
+        // console.log(result);
+        // this.pipeline = null;
     }
     async getPlainTransport() {
         if (!this.router)
@@ -87,7 +95,7 @@ class Room {
         const transport = await this.router.createPlainTransport({
             listenIp: { ip: '0.0.0.0', announcedIp: process.env.ANNOUNCED_IP },
             rtcpMux: true,
-            comedia: true
+            comedia: false,
         });
         return transport;
     }
@@ -97,7 +105,7 @@ class Room {
         if (!peer.audioPort) {
             peer.audioPlainTransport = await this.getPlainTransport();
             const audioPort = __1.rtpPortPool.acquirePort();
-            await peer.audioPlainTransport?.connect({ ip: "127.0.0.1", port: audioPort });
+            console.log('audio port connected to plain transport: ', audioPort);
             peer.audioPort = audioPort;
             if (peer.audioPlainTransport && peer.producers.mic) {
                 const audioConsumer = await peer.audioPlainTransport.consume({
@@ -107,13 +115,20 @@ class Room {
                 });
                 peer.audioConsumer = audioConsumer;
                 await peer.audioConsumer.resume();
+                await peer.audioPlainTransport.connect({ ip: "127.0.0.1", port: audioPort });
+                console.log("PlainTransport tuple:", peer.audioPlainTransport.tuple);
                 console.log('for audio done');
+                console.log("audio PlainTransport params:", {
+                    ip: peer.audioPlainTransport?.tuple.localIp,
+                    port: peer.audioPlainTransport?.tuple.localPort,
+                    rtcpPort: peer.audioPlainTransport?.rtcpTuple?.localPort,
+                });
             }
         }
         if (!peer.videoPort) {
             peer.videoPlainTransport = await this.getPlainTransport();
             const videoPort = __1.rtpPortPool.acquirePort();
-            await peer.videoPlainTransport?.connect({ ip: "127.0.0.1", port: videoPort });
+            console.log('video port connected to plain transport: ', videoPort);
             peer.videoPort = videoPort;
             if (peer.videoPlainTransport && peer.producers.cam) {
                 const videoConsumer = await peer.videoPlainTransport.consume({
@@ -123,7 +138,14 @@ class Room {
                 });
                 peer.videoConsumer = videoConsumer;
                 await peer.videoConsumer.resume();
+                await peer.videoPlainTransport.connect({ ip: "127.0.0.1", port: videoPort });
+                console.log("PlainTransport tuple:", peer.videoPlainTransport.tuple);
                 console.log('for video done');
+                console.log("video PlainTransport params:", {
+                    ip: peer.videoPlainTransport?.tuple.localIp,
+                    port: peer.videoPlainTransport?.tuple.localPort,
+                    rtcpPort: peer.videoPlainTransport?.rtcpTuple?.localPort,
+                });
             }
         }
     }
@@ -145,21 +167,22 @@ class Room {
         await this.startRecording();
     }
     async getRtpStreamsInfoforPeer(peer) {
-        if (peer.audioPlainTransport && peer.audioConsumer) {
-            const rtp = peer.audioConsumer?.rtpParameters;
-            const codec = rtp?.codecs[0];
-            this.consumersInfo.push({
-                peerId: peer.userId,
-                consumerId: peer.audioConsumer.id,
-                kind: 'audio',
-                codec: codec.mimeType,
-                payloadType: codec.payloadType,
-                clockRate: codec.clockRate,
-                ssrc: (rtp.encodings) ? rtp.encodings[0].ssrc : 0,
-                port: peer.audioPort
-            });
-            console.log('consumerId : ', peer.audioConsumer.id, ' audioPort : ', peer.audioPort);
-        }
+        // if(peer.audioPlainTransport && peer.audioConsumer){
+        //     const rtp=peer.audioConsumer?.rtpParameters;
+        //     const codec=rtp?.codecs[0];
+        //     this.consumersInfo.push({
+        //         peerId:peer.userId,
+        //         consumerId:peer.audioConsumer.id,
+        //         kind:'audio',
+        //         codec:codec.mimeType,
+        //         payloadType:codec.payloadType,
+        //         clockRate:codec.clockRate,
+        //         ssrc:(rtp.encodings)?rtp.encodings[0].ssrc!:0,
+        //         port:peer.audioPort!,
+        //         profileLevelId: typeof codec?.parameters?.["profile-level-id"] === "string" ? codec.parameters["profile-level-id"] : 'N/A'
+        //     })
+        //     console.log('consumerId : ',peer.audioConsumer.id,' audioPort : ',peer.audioPort);
+        // }
         if (peer.videoPlainTransport && peer.videoConsumer) {
             const rtp = peer.videoConsumer?.rtpParameters;
             const codec = rtp?.codecs[0];
@@ -171,8 +194,10 @@ class Room {
                 payloadType: codec.payloadType,
                 clockRate: codec.clockRate,
                 ssrc: (rtp.encodings) ? rtp.encodings[0].ssrc : 0,
-                port: peer.videoPort
+                port: peer.videoPort,
+                profileLevelId: typeof codec?.parameters?.["profile-level-id"] === "string" ? codec.parameters["profile-level-id"] : 'N/A'
             });
+            console.log("RTP Parameters:", JSON.stringify(peer.videoConsumer?.rtpParameters, null, 2));
             console.log('consumerId : ', peer.videoConsumer.id, ' videoPort : ', peer.videoPort);
         }
     }
@@ -195,6 +220,9 @@ class Room {
             __1.rtpPortPool.releasePort(peer.videoPort);
             peer.videoPort = null;
         }
+        console.log('closing recording');
     }
 }
 exports.default = Room;
+//gst-launch-1.0 -v udpsrc port=42003 caps="application/x-rtp, media=video, encoding-name=H264, payload=101, clock-rate=90000" ! rtpjitterbuffer ! rtph264depay ! h264parse config-interval=1 ! mp4mux ! filesink location="output.mp4"
+//gst-launch-1.0 -v -e udpsrc port=42003 caps="application/x-rtp,media=video,encoding-name=H264,payload=101,clock-rate=90000" ! queue leaky=downstream ! rtph264depay ! h264parse ! mp4mux ! filesink location="recording.mp4"

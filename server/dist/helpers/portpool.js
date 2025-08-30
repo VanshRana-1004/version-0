@@ -21,6 +21,7 @@ class PortPool {
         if (this.usedPorts.has(port)) {
             this.usedPorts.delete(port);
             this.availablePorts.push(port);
+            console.log('port released:', port);
         }
         else {
             console.warn(`Port ${port} is not in use, cannot release`);
