@@ -8,6 +8,8 @@ import Room from './classes/room';
 import Peer from './classes/peer';
 import { createWebRtcTransport } from './helpers/transport';
 import PortPool from './helpers/portpool';
+import fs from 'fs';
+import path from 'path';
 
 const app=express();
 app.use(express.json());
@@ -31,13 +33,25 @@ const io = new SocketIOServer(server, {
   }
 }); 
 
+const sdpDir=path.join(__dirname,'../sdp');
+if (!fs.existsSync(sdpDir)) {
+    fs.mkdirSync(sdpDir, { recursive: true });
+    console.log("Created recordings directory:", sdpDir);
+}
+const recordingDir=path.join(__dirname,'../recordings');
+if(!fs.existsSync(recordingDir)){
+    fs.mkdirSync(recordingDir, { recursive: true });
+    console.log("Created recordings directory:", recordingDir);
+}
+
 async function cleanupPeer(socketId: string, roomId: string) {
   const room = roomMap[roomId];
   const peer = peerMap[socketId];
   if (!room || !peer) return;
 
   if(room.recording==1){
-    await peer.closeRecordingConsumers();
+    await room.stopRecording(peer);
+    if(peer.screen==true) await room.stopSharedScreenRecording();
   }
 
   if(peer.userId===room.host){
@@ -207,9 +221,11 @@ io.on('connect', async (socket: Socket) => {
       }
       else if (appData.mediaTag === 'screen-video') {
         peerMap[socket.id].producers.screen = producer;
+        console.log('screen producer set')
       }
       else if (appData.mediaTag === 'screen-audio') {
         peerMap[socket.id].producers.saudio = producer;
+        console.log('screen audio producer set')
       }
       
 
@@ -281,17 +297,31 @@ io.on('connect', async (socket: Socket) => {
     socket.on('screen-share',async({roomId,toggle,name},callback)=>{
       const room=roomMap[roomId];
       if(room){
+        const peer=peerMap[socket.id];
         if(toggle){
           if(room.screen!='') return callback({error : 'screen already shared by other peer'})
           room.screen=name;
+          peer.screen=toggle;
+          if(room.recording==1){
+            const waitForProducers = async () => {
+              while (!peer.producers?.screen || !peer.producers?.saudio) {
+                await new Promise(resolve => setTimeout(resolve, 200)); 
+              }
+            };
+
+            await waitForProducers();
+            await room.startSharedScreenRecording(peer);
+          }
         }
         else{
           room.screen='';
+          peer.screen=toggle;
+          if(room.recording==1){
+            await room.stopSharedScreenRecording();
+          }
         }
-        const peer=peerMap[socket.id];
-        peer.screen=toggle;
         socket.to(roomId).emit('screen-share',{toggle,name});
-        callback({toggle});
+        if (callback) callback({ toggle });
       }
     })
       
@@ -324,7 +354,25 @@ io.on('connect', async (socket: Socket) => {
       const room=roomMap[roomId];
       if(record){
         if(room.recording===0){
+          
           await room.createPlainTransports();
+          
+          if(room.screen!=''){
+            const peer=room.peers.find(p=>(p.screen===true));
+            if(peer){
+              const waitForProducers = async () => {
+                while (!peer.producers?.screen || !peer.producers?.saudio) {
+                  await new Promise(resolve => setTimeout(resolve, 200)); 
+                }
+              };
+
+              await waitForProducers();
+              console.log('Screen-sharing peer producers ready:', peer.producers);
+              await room.startSharedScreenRecording(peer);
+            }
+            
+          }
+
           let recordingInterval: NodeJS.Timeout | null = null;
           recordingInterval=setInterval(async()=>{
             if(room.recording==1){
@@ -341,6 +389,7 @@ io.on('connect', async (socket: Socket) => {
       } 
       else{
         await room.closePlainTransports();
+        if(room.screen!='') await room.stopSharedScreenRecording();
         let stopRecordingInterval: NodeJS.Timeout | null = null;
         stopRecordingInterval=setInterval(async()=>{
           if(room.recording==-1){
@@ -389,4 +438,4 @@ app.post('/join-call',async (req,res)=>{
     catch(e){
         res.status(500).json({ message : 'error while joining room' });
     }
-}) 
+})

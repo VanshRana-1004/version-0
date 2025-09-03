@@ -6,7 +6,7 @@ function startFfmpeg(sdpPath, outputPath) {
     const ffmpegArgs = [
         "-protocol_whitelist", "file,udp,rtp",
         "-i", sdpPath,
-        "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:white",
+        "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black",
         "-c:v", "libx264",
         "-preset", "ultrafast",
         "-tune", "zerolatency",
@@ -27,6 +27,3 @@ function startFfmpeg(sdpPath, outputPath) {
     });
     return ffmpeg;
 }
-/*-fflags +genpts -use_wallclock_as_timestamps 1
--max_delay 500000
-*/ 

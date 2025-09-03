@@ -5,12 +5,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createSdpFile = createSdpFile;
 const fs_1 = __importDefault(require("fs"));
-function createSdpFile(peer, filePath) {
+function createSdpFile(audioConsumer, videoConsumer, audioPort, videoPort, filePath) {
     const ip = process.env.ANNOUNCED_IP || '127.0.0.1';
-    const audioPort = peer.audioPort;
-    const videoPort = peer.videoPort;
-    const audioCodec = peer.audioConsumer?.rtpParameters.codecs[0];
-    const videoCodec = peer.videoConsumer?.rtpParameters.codecs[0];
+    const audioCodec = audioConsumer?.rtpParameters.codecs[0];
+    const videoCodec = videoConsumer?.rtpParameters.codecs[0];
     if (!audioCodec || !videoCodec)
         return;
     const audioPayload = audioCodec.payloadType;

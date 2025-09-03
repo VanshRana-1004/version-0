@@ -1,12 +1,14 @@
 import { Router } from "mediasoup/node/lib/RouterTypes";
 import Peer from "./peer";
-import { AppData } from "mediasoup/node/lib/types";
+import { AppData, Consumer, PlainTransport } from "mediasoup/node/lib/types";
 import path from "path";
-import fs from "fs";
 import { createSdpFile } from "../helpers/create-sdp";
 import { startFfmpeg } from "../helpers/ffmpeg";
 import { rtpPool } from "..";
 import { ChildProcessWithoutNullStreams } from "child_process";
+
+const sdpDir=path.join(__dirname,'../../sdp');
+const recordingDir=path.join(__dirname,'../../recordings');
 
 class Room{
     public roomId : string;
@@ -17,6 +19,14 @@ class Room{
     public orgHost : string; 
     public recording : number;
     public ffmpegProcesses: Map<string, ChildProcessWithoutNullStreams>;
+    
+    public screenFFmpegProcess : ChildProcessWithoutNullStreams | null;
+    public screenTransport : PlainTransport | null;
+    public saudioTransport : PlainTransport | null;
+    public screenConsumer : Consumer | null;
+    public saudioConsumer : Consumer | null;
+    public screenPort : number | null;
+    public saudioPort : number | null;
 
     constructor(roomId : string, router : Router, userId : string){
         this.orgHost=userId; 
@@ -27,6 +37,14 @@ class Room{
         this.screen='';
         this.recording=0;
         this.ffmpegProcesses=new Map();
+
+        this.screenFFmpegProcess=null;
+        this.screenTransport=null;
+        this.saudioTransport=null;
+        this.screenConsumer=null;
+        this.saudioConsumer=null;
+        this.screenPort=null;
+        this.saudioPort=null;
     }
 
     getProducers() {
@@ -86,28 +104,18 @@ class Room{
     }
 
     async startRecording(peer : Peer) {
-        const sdpDir=path.join(__dirname,'../../sdp');
-        if (!fs.existsSync(sdpDir)) {
-            fs.mkdirSync(sdpDir, { recursive: true });
-            console.log("Created recordings directory:", sdpDir);
-        }
-        const recordingDir=path.join(__dirname,'../../recordings');
-        if(!fs.existsSync(recordingDir)){
-            fs.mkdirSync(recordingDir, { recursive: true });
-            console.log("Created recordings directory:", recordingDir);
-        }
 
         const sdpFileName=`${this.roomId}_${peer.socketId}.sdp`;
         const sdpPath=path.join(sdpDir,sdpFileName);
+        if(!peer.audioConsumer || !peer.videoConsumer || !peer.audioPort || !peer.videoPort) return;
 
-        createSdpFile(peer,sdpPath);
+        createSdpFile(peer.audioConsumer,peer.videoConsumer,peer.audioPort,peer.videoPort,sdpPath);
         
         const outputFileName=`${this.roomId}_${peer.socketId}.mp4`;
         const outputPath=path.join(recordingDir,outputFileName);
 
         this.recording=1;
         const ffmpegProc=startFfmpeg(sdpPath,outputPath); 
-        peer.ffmpegProcess=ffmpegProc;
         this.ffmpegProcesses.set(peer.socketId, ffmpegProc);
         console.log('Recording started for peer : ',peer.socketId);
     }
@@ -120,6 +128,18 @@ class Room{
             this.ffmpegProcesses.delete(peer.socketId);
             console.log(`FFmpeg stopped for peer ${peer.socketId}`);
         }
+        peer.videoPlainTransport?.close();
+        peer.audioPlainTransport?.close();
+        peer.videoConsumer?.close();
+        peer.audioConsumer?.close();
+        if(peer.videoPort) rtpPool.releasePort(peer.videoPort);
+        if(peer.audioPort) rtpPool.releasePort(peer.audioPort);
+        peer.videoPort=null;
+        peer.audioPort=null;    
+        peer.videoConsumer=null;
+        peer.audioConsumer=null;
+        peer.videoPlainTransport=null;
+        peer.audioPlainTransport=null;
     }
 
     async getPlainTransport(){
@@ -201,22 +221,100 @@ class Room{
     async closePlainTransports(){
         for(const peer of this.peers){
             await this.stopRecording(peer);
-            peer.videoPlainTransport?.close();
-            peer.audioPlainTransport?.close();
-            peer.videoConsumer?.close();
-            peer.audioConsumer?.close();
-            if(peer.videoPort) rtpPool.releasePort(peer.videoPort);
-            if(peer.audioPort) rtpPool.releasePort(peer.audioPort);
-            peer.videoPort=null;
-            peer.audioPort=null;    
-            peer.videoConsumer=null;
-            peer.audioConsumer=null;
-            peer.videoPlainTransport=null;
-            peer.audioPlainTransport=null;
         }
         this.recording=-1;
         console.log('closing recording');
     }
+
+    // to prepare transport and consumer for shared screen for recording 
+    async startSharedScreenRecording(peer : Peer){
+        if(!this.router) return;
+        
+        if(!peer.producers.screen) console.log('No screen producer found for peer : ',peer.socketId);
+        if(!peer.producers.saudio) console.log('No screen audio producer found for peer : ',peer.socketId);
+
+        if(peer.producers.screen){
+            const screenTransport=await this.getPlainTransport();
+            if(!screenTransport) return;
+            this.screenTransport=screenTransport;
+            const screenConsumer=await screenTransport.consume({
+                producerId:peer.producers.screen.id,
+                rtpCapabilities:this.router.rtpCapabilities, 
+                paused:false
+            })
+            this.screenConsumer=screenConsumer;
+            const screenPort=rtpPool.acquirePort();
+            this.screenPort=screenPort;
+            await this.screenTransport.connect({ip:'127.0.0.1',port:screenPort})
+            await this.screenConsumer.requestKeyFrame();
+            setInterval(async () => {
+                if (this.screenConsumer && this.screenConsumer.paused) return;
+                if (this.screenConsumer && !this.screenConsumer.closed) {
+                    await this.screenConsumer.requestKeyFrame();
+                }
+            }, 5000);
+            console.log('screen consumer codecs info : ',screenConsumer.rtpParameters.codecs);
+        }
+
+        if(peer.producers.saudio){
+            const saudioTransport=await this.getPlainTransport();
+            if(!saudioTransport) return;
+            this.saudioTransport=saudioTransport;
+            const saudioConsumer=await saudioTransport.consume({
+                producerId:peer.producers.saudio.id,
+                rtpCapabilities:this.router.rtpCapabilities, 
+                paused:false
+            })
+            this.saudioConsumer=saudioConsumer;
+            const saudioPort=rtpPool.acquirePort();
+            this.saudioPort=saudioPort;
+            await this.saudioTransport.connect({ip:'127.0.0.1',port:saudioPort})
+            console.log('screen audio consumer codecs info : ',saudioConsumer.rtpParameters.codecs);
+        }
+
+        this.startScreenFFmpegProcess();
+    }
+
+    // to actually start the FFmpeg process for recording screen
+    async startScreenFFmpegProcess(){
+        const sdpFileName=`${this.roomId}_screen.sdp`;
+        const sdpPath=path.join(sdpDir,sdpFileName);
+        const outputFileName=`${this.roomId}_screen.mp4`;
+        const outputPath=path.join(recordingDir,outputFileName);
+        if(!this.saudioConsumer || !this.screenConsumer || !this.saudioPort || !this.screenPort) return;
+        console.log('Starting screen recording with params : ',{sdpPath,outputPath});
+        createSdpFile(this.saudioConsumer,this.screenConsumer,this.saudioPort,this.screenPort,sdpPath);
+        const ffmpegProc=startFfmpeg(sdpPath,outputPath); 
+        this.screenFFmpegProcess=ffmpegProc;
+        console.log('Screen Recording started');
+    }
+
+    // to stop the shared screen recording
+    async stopSharedScreenRecording(){
+        if(this.screenFFmpegProcess){
+            this.screenFFmpegProcess.stdin.write("q"); 
+            this.screenFFmpegProcess.stdin.end();
+            this.screenFFmpegProcess=null;
+            console.log(`FFmpeg stopped for screen recording`);
+        }
+        this.screenTransport?.close();
+        this.saudioTransport?.close();
+        this.screenConsumer?.close();
+        this.saudioConsumer?.close();
+        if(this.screenPort) rtpPool.releasePort(this.screenPort);
+        if(this.saudioPort) rtpPool.releasePort(this.saudioPort);
+        this.screenPort=null;
+        this.saudioPort=null;    
+        this.screenConsumer=null;
+        this.saudioConsumer=null;
+        this.screenTransport=null;
+        this.saudioTransport=null;
+        this.screen='';
+        console.log('Stopped shared screen recording');
+    }
+
 }
 
 export default Room;
+
+// screen already shared and after that we start recording 

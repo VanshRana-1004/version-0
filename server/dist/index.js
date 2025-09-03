@@ -47,6 +47,8 @@ const room_1 = __importDefault(require("./classes/room"));
 const peer_1 = __importDefault(require("./classes/peer"));
 const transport_1 = require("./helpers/transport");
 const portpool_1 = __importDefault(require("./helpers/portpool"));
+const fs_1 = __importDefault(require("fs"));
+const path_1 = __importDefault(require("path"));
 const app = (0, express_1.default)();
 app.use(express_1.default.json());
 app.use((0, cors_1.default)({
@@ -65,13 +67,25 @@ const io = new socket_io_1.Server(server, {
         origin: '*',
     }
 });
+const sdpDir = path_1.default.join(__dirname, '../sdp');
+if (!fs_1.default.existsSync(sdpDir)) {
+    fs_1.default.mkdirSync(sdpDir, { recursive: true });
+    console.log("Created recordings directory:", sdpDir);
+}
+const recordingDir = path_1.default.join(__dirname, '../recordings');
+if (!fs_1.default.existsSync(recordingDir)) {
+    fs_1.default.mkdirSync(recordingDir, { recursive: true });
+    console.log("Created recordings directory:", recordingDir);
+}
 async function cleanupPeer(socketId, roomId) {
     const room = roomMap[roomId];
     const peer = peerMap[socketId];
     if (!room || !peer)
         return;
     if (room.recording == 1) {
-        await peer.closeRecordingConsumers();
+        await room.stopRecording(peer);
+        if (peer.screen == true)
+            await room.stopSharedScreenRecording();
     }
     if (peer.userId === room.host) {
         const otherPeer = room.peers.filter((p) => p.userId !== peer.userId);
@@ -242,9 +256,11 @@ io.on('connect', async (socket) => {
         }
         else if (appData.mediaTag === 'screen-video') {
             peerMap[socket.id].producers.screen = producer;
+            console.log('screen producer set');
         }
         else if (appData.mediaTag === 'screen-audio') {
             peerMap[socket.id].producers.saudio = producer;
+            console.log('screen audio producer set');
         }
         console.log('producer created successfully');
         callback({ id: producer.id });
@@ -304,18 +320,32 @@ io.on('connect', async (socket) => {
     socket.on('screen-share', async ({ roomId, toggle, name }, callback) => {
         const room = roomMap[roomId];
         if (room) {
+            const peer = peerMap[socket.id];
             if (toggle) {
                 if (room.screen != '')
                     return callback({ error: 'screen already shared by other peer' });
                 room.screen = name;
+                peer.screen = toggle;
+                if (room.recording == 1) {
+                    const waitForProducers = async () => {
+                        while (!peer.producers?.screen || !peer.producers?.saudio) {
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                        }
+                    };
+                    await waitForProducers();
+                    await room.startSharedScreenRecording(peer);
+                }
             }
             else {
                 room.screen = '';
+                peer.screen = toggle;
+                if (room.recording == 1) {
+                    await room.stopSharedScreenRecording();
+                }
             }
-            const peer = peerMap[socket.id];
-            peer.screen = toggle;
             socket.to(roomId).emit('screen-share', { toggle, name });
-            callback({ toggle });
+            if (callback)
+                callback({ toggle });
         }
     });
     socket.on("resume-consumer", async ({ roomId, consumerId }) => {
@@ -345,6 +375,19 @@ io.on('connect', async (socket) => {
         if (record) {
             if (room.recording === 0) {
                 await room.createPlainTransports();
+                if (room.screen != '') {
+                    const peer = room.peers.find(p => (p.screen === true));
+                    if (peer) {
+                        const waitForProducers = async () => {
+                            while (!peer.producers?.screen || !peer.producers?.saudio) {
+                                await new Promise(resolve => setTimeout(resolve, 200));
+                            }
+                        };
+                        await waitForProducers();
+                        console.log('Screen-sharing peer producers ready:', peer.producers);
+                        await room.startSharedScreenRecording(peer);
+                    }
+                }
                 let recordingInterval = null;
                 recordingInterval = setInterval(async () => {
                     if (room.recording == 1) {
@@ -361,6 +404,8 @@ io.on('connect', async (socket) => {
         }
         else {
             await room.closePlainTransports();
+            if (room.screen != '')
+                await room.stopSharedScreenRecording();
             let stopRecordingInterval = null;
             stopRecordingInterval = setInterval(async () => {
                 if (room.recording == -1) {

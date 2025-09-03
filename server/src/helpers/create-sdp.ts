@@ -1,14 +1,11 @@
 import fs from 'fs';
-import Peer from '../classes/peer';
+import { Consumer } from 'mediasoup/node/lib/types';
 
-export function createSdpFile(peer: Peer, filePath: string) {
+export function createSdpFile(audioConsumer : Consumer, videoConsumer : Consumer, audioPort : number, videoPort : number, filePath : string) {
   const ip = process.env.ANNOUNCED_IP || '127.0.0.1';
-  const audioPort = peer.audioPort; 
-  const videoPort = peer.videoPort; 
-  const audioCodec = peer.audioConsumer?.rtpParameters.codecs[0];
-  const videoCodec = peer.videoConsumer?.rtpParameters.codecs[0];
+  const audioCodec = audioConsumer?.rtpParameters.codecs[0];
+  const videoCodec = videoConsumer?.rtpParameters.codecs[0];
   if (!audioCodec || !videoCodec) return;
-
   const audioPayload = audioCodec.payloadType;
   const videoPayload = videoCodec.payloadType;
   const audioType = audioCodec.mimeType.split('/')[1];
@@ -16,10 +13,8 @@ export function createSdpFile(peer: Peer, filePath: string) {
   const audioClockrate = audioCodec.clockRate;
   const videoClockrate = videoCodec.clockRate;
   const audioChannels = audioCodec.channels || 2;
-
   const audioMinptime = audioCodec.parameters?.minptime || 10;
   const audioUseinbandfec = audioCodec.parameters?.useinbandfec || 1;
-
   const videoProfileLevelId = videoCodec.parameters?.profileLevelId || '42e01f';
   const videoLevelAsymmetryAllowed = videoCodec.parameters?.levelAsymmetryAllowed || 1;
   const videoPacketizationMode = videoCodec.parameters?.packetizationMode || 1;
