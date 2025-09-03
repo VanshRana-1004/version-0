@@ -1,5 +1,4 @@
 import { Producer, Transport, Consumer, PlainTransport } from "mediasoup/node/lib/types";
-import { rtpPortPool } from "..";
 
 class Peer{
     public userId : string; 
@@ -19,8 +18,6 @@ class Peer{
     public audioConsumer : Consumer | null;
     public videoPlainTransport : PlainTransport | null;
     public audioPlainTransport : PlainTransport | null;
-    public videoPort : number | null;
-    public audioPort : number | null; 
 
     constructor(name : string,socketId : string,userId : string){
         this.userId=userId;
@@ -40,8 +37,6 @@ class Peer{
         this.audioConsumer=null;
         this.videoPlainTransport=null;
         this.audioPlainTransport=null;
-        this.videoPort=null;
-        this.audioPort=null;
     }
 
     async closeRecordingConsumers(){
@@ -51,10 +46,6 @@ class Peer{
         this.videoConsumer?.close();
         this.audioConsumer=null;
         this.videoConsumer=null;
-        rtpPortPool.releasePort(this.audioPort!);
-        this.audioPort=null;
-        rtpPortPool.releasePort(this.videoPort!);
-        this.videoPort=null;
     }
 }
 

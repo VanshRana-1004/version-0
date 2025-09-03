@@ -7,9 +7,6 @@ import { mediaCodecs } from './helpers/config';
 import Room from './classes/room';
 import Peer from './classes/peer';
 import { createWebRtcTransport } from './helpers/transport';
-import { PortPool } from './helpers/portpool';
-
-export const rtpPortPool = new PortPool(42000, 43999);
 
 const app=express();
 app.use(express.json());
@@ -325,20 +322,32 @@ io.on('connect', async (socket: Socket) => {
       const room=roomMap[roomId];
       if(record){
         if(room.recording===0){
-          room.recording=1;
           await room.createPlainTransports();
-          socket.emit('recording',{record: 1});
-          socket.to(roomId).emit('recording',{record: 1});
+          let recordingInterval: NodeJS.Timeout | null = null;
+          recordingInterval=setInterval(async()=>{
+            if(room.recording==1){
+              socket.emit('recording',{record: 1});
+              socket.to(roomId).emit('recording',{record: 1});
+              clearInterval(recordingInterval!);
+              recordingInterval = null; 
+            }
+          },1000);
         } 
         else if(room.recording===-1){
           socket.emit('recording',{error : 'not allowed to do multiple recording for same call'});
         }
       } 
       else{
-        room.recording=-1;
         await room.closePlainTransports();
-        socket.emit('recording',{record : 0});
-        socket.to(roomId).emit('recording',{record : 0})
+        let stopRecordingInterval: NodeJS.Timeout | null = null;
+        stopRecordingInterval=setInterval(async()=>{
+          if(room.recording==-1){
+            socket.emit('recording',{record : 0});
+            socket.to(roomId).emit('recording',{record : 0})
+            clearInterval(stopRecordingInterval!);
+            stopRecordingInterval = null;
+          }
+        },1000);
       }
     })
 })

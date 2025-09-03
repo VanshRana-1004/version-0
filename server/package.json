@@ -20,13 +20,15 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
+    "gstreamer-superficial": "^1.7.4",
     "mediasoup": "^3.18.0",
     "multer": "^2.0.2",
+    "node-gyp": "^11.4.2",
     "socket.io": "^4.8.1",
     "typescript": "^5.9.2"
   },
   "devDependencies": {
     "@types/node": "^24.2.1",
-    "node": "^22.18.0"
+    "node": "^21.7.3"
   }
 }

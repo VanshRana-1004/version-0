@@ -36,7 +36,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.rtpPortPool = void 0;
 const http = __importStar(require("http"));
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
@@ -46,8 +45,6 @@ const config_1 = require("./helpers/config");
 const room_1 = __importDefault(require("./classes/room"));
 const peer_1 = __importDefault(require("./classes/peer"));
 const transport_1 = require("./helpers/transport");
-const portpool_1 = require("./helpers/portpool");
-exports.rtpPortPool = new portpool_1.PortPool(42000, 43999);
 const app = (0, express_1.default)();
 app.use(express_1.default.json());
 app.use((0, cors_1.default)({
@@ -344,20 +341,32 @@ io.on('connect', async (socket) => {
         const room = roomMap[roomId];
         if (record) {
             if (room.recording === 0) {
-                room.recording = 1;
                 await room.createPlainTransports();
-                socket.emit('recording', { record: 1 });
-                socket.to(roomId).emit('recording', { record: 1 });
+                let recordingInterval = null;
+                recordingInterval = setInterval(async () => {
+                    if (room.recording == 1) {
+                        socket.emit('recording', { record: 1 });
+                        socket.to(roomId).emit('recording', { record: 1 });
+                        clearInterval(recordingInterval);
+                        recordingInterval = null;
+                    }
+                }, 1000);
             }
             else if (room.recording === -1) {
                 socket.emit('recording', { error: 'not allowed to do multiple recording for same call' });
             }
         }
         else {
-            room.recording = -1;
             await room.closePlainTransports();
-            socket.emit('recording', { record: 0 });
-            socket.to(roomId).emit('recording', { record: 0 });
+            let stopRecordingInterval = null;
+            stopRecordingInterval = setInterval(async () => {
+                if (room.recording == -1) {
+                    socket.emit('recording', { record: 0 });
+                    socket.to(roomId).emit('recording', { record: 0 });
+                    clearInterval(stopRecordingInterval);
+                    stopRecordingInterval = null;
+                }
+            }, 1000);
         }
     });
 });

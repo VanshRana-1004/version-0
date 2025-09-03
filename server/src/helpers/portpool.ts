@@ -2,10 +2,10 @@ export class PortPool {
   private availablePorts: number[];
   private usedPorts: Set<number>;
 
-  constructor(startPort: number = 42000, endPort: number = 43999) {
+  constructor(startPort: number = 5000, endPort: number = 6999) {
     this.availablePorts = [];
     for (let p = startPort; p <= endPort; p++) {
-      this.availablePorts.push(p);
+      if(p%2===0) this.availablePorts.push(p);
     }
     this.usedPorts = new Set();
   }

@@ -1,20 +1,10 @@
 import { Router } from "mediasoup/node/lib/RouterTypes";
 import Peer from "./peer";
 import { AppData } from "mediasoup/node/lib/types";
-import { rtpPortPool } from "..";
-import { ChildProcessWithoutNullStreams } from "child_process";
-
-export interface ConsumerInfo{
-    peerId: string;
-    consumerId: string;
-    kind: 'audio' | 'video';
-    codec: string;
-    payloadType: number;
-    clockRate: number;
-    ssrc: number;
-    port: number;
-    profileLevelId:string 
-}
+import path from "path";
+import fs from "fs";
+import { createSdpFile } from "../helpers/create-sdp";
+import { startFfmpeg } from "../helpers/ffmpeg";
 
 class Room{
     public roomId : string;
@@ -24,8 +14,7 @@ class Room{
     public host : string;
     public orgHost : string; 
     public recording : number;
-    public pipeline: ChildProcessWithoutNullStreams | null;
-    public consumersInfo : ConsumerInfo[];
+    public ffmpegProcess: any | null;
 
     constructor(roomId : string, router : Router, userId : string){
         this.orgHost=userId; 
@@ -35,8 +24,7 @@ class Room{
         this.peers=[];
         this.screen='';
         this.recording=0;
-        this.pipeline=null
-        this.consumersInfo=[];
+        this.ffmpegProcess=null;
     }
 
     getProducers() {
@@ -95,28 +83,38 @@ class Room{
         return null
     }
 
-    async startRecording() {
-        if (this.consumersInfo.length === 0) {
-            console.warn("No RTP streams to record yet");
-            return;
+    async startRecording(peer : Peer) {
+        const sdpDir=path.join(__dirname,'../../sdp');
+        if (!fs.existsSync(sdpDir)) {
+            fs.mkdirSync(sdpDir, { recursive: true });
+            console.log("Created recordings directory:", sdpDir);
         }
-        // this.pipeline = new GStreamerRecorder(this.consumersInfo);
-        // if (!this.pipeline) {
-        //     console.warn("No pipeline ready for recording");
-        //     return;
-        // }
-        // const filePath = this.pipeline.start();
-        // console.log(`Recording started at ${filePath}`);
+        const recordingDir=path.join(__dirname,'../../recordings');
+        if(!fs.existsSync(recordingDir)){
+            fs.mkdirSync(recordingDir, { recursive: true });
+            console.log("Created recordings directory:", recordingDir);
+        }
+
+        const sdpFileName=`${this.roomId}_${peer.userId}.sdp`;
+        const sdpPath=path.join(sdpDir,sdpFileName);
+
+        createSdpFile(peer,sdpPath);
+        
+        const outputFileName=`${this.roomId}_${peer.userId}.mp4`;
+        const outputPath=path.join(recordingDir,outputFileName);
+
+        this.recording=1;
+        this.ffmpegProcess=startFfmpeg(sdpPath,outputPath); 
+        console.log('Recording started for peer : ',peer.userId);
     }
 
     async stopRecording() {
-        // if (!this.pipeline) {
-        //     console.warn("No pipeline to stop");
-        //     return;
-        // }
-        // const result = await this.pipeline.stop();
-        // console.log(result);
-        // this.pipeline = null;
+        if(this.ffmpegProcess){
+            this.ffmpegProcess.stdin.write("q"); 
+            this.ffmpegProcess=null;
+            this.recording=-1;
+            console.log('Recording stopped');
+        }
     }
 
     async getPlainTransport(){
@@ -131,34 +129,22 @@ class Room{
 
     async getPeerReadyForRecording(peer : Peer){
         if(!this.router) return;
-        if(!peer.audioPort){
+        if(!peer.audioPlainTransport){
             peer.audioPlainTransport=await this.getPlainTransport();
-            const audioPort=rtpPortPool.acquirePort();
-            console.log('audio port connected to plain transport: ',audioPort);
-            peer.audioPort=audioPort;
             if(peer.audioPlainTransport && peer.producers.mic){
                 const audioConsumer=await peer.audioPlainTransport.consume({
                     producerId: peer.producers.mic.id,
                     rtpCapabilities: this.router.rtpCapabilities,
                     paused: false
                 });
-                peer.audioConsumer=audioConsumer;   
-                await peer.audioConsumer.resume();
-                await peer.audioPlainTransport.connect({ ip: "127.0.0.1", port: audioPort });
-                console.log("PlainTransport tuple:", peer.audioPlainTransport.tuple);
-                console.log('for audio done');
-                console.log("audio PlainTransport params:", {
-                    ip: peer.audioPlainTransport?.tuple.localIp,
-                    port: peer.audioPlainTransport?.tuple.localPort,
-                    rtcpPort: peer.audioPlainTransport?.rtcpTuple?.localPort,
-                });
+                peer.audioConsumer=audioConsumer;
+                await peer.audioPlainTransport.connect({ip:'127.0.0.1',port:5004})
+                console.log('audio consumer codecs info : ',audioConsumer.rtpParameters.codecs);
             }
+            console.log('audio port : ',peer.audioPlainTransport?.tuple.localPort);
         }
-        if(!peer.videoPort){
+        if(!peer.videoPlainTransport){
             peer.videoPlainTransport=await this.getPlainTransport();
-            const videoPort=rtpPortPool.acquirePort();
-            console.log('video port connected to plain transport: ',videoPort);
-            peer.videoPort=videoPort;
             if(peer.videoPlainTransport && peer.producers.cam){
                 const videoConsumer=await peer.videoPlainTransport.consume({
                     producerId: peer.producers.cam.id,
@@ -166,25 +152,23 @@ class Room{
                     paused: false
                 });
                 peer.videoConsumer=videoConsumer;
-                await peer.videoConsumer.resume();
-                await peer.videoPlainTransport.connect({ ip: "127.0.0.1", port: videoPort });
-                console.log("PlainTransport tuple:", peer.videoPlainTransport.tuple);
-                console.log('for video done')
-                console.log("video PlainTransport params:", {
-                    ip: peer.videoPlainTransport?.tuple.localIp,
-                    port: peer.videoPlainTransport?.tuple.localPort,
-                    rtcpPort: peer.videoPlainTransport?.rtcpTuple?.localPort,
-                });
+                await peer.videoPlainTransport.connect({ip:'127.0.0.1',port:5006})
+                await peer.videoConsumer.requestKeyFrame();
+                setInterval(async () => {
+                    if (peer.videoConsumer && !peer.videoConsumer.closed) {
+                        await peer.videoConsumer.requestKeyFrame();
+                    }
+                }, 2000);
+                console.log('video consumer codecs info : ',videoConsumer.rtpParameters.codecs);
             }
+            console.log('video port : ',peer.videoPlainTransport?.tuple.localPort);
         }
     }
 
     // when newly joined peer is getting prepared for recording
     async createPlainTransportsForPeer(peer : Peer){
         await this.getPeerReadyForRecording(peer);
-        await this.getRtpStreamsInfoforPeer(peer);
-        console.log("------ RTP STREAMS INFO when new peer joined ------");
-        console.table(this.consumersInfo);
+        await this.startRecording(peer);
     }
 
     // when already present peers are getting prepared for recording  
@@ -192,55 +176,8 @@ class Room{
         for(const peer of this.peers){
             console.log(peer.socketId);
             await this.getPeerReadyForRecording(peer);
-            console.log('----------------------creating consumers-----------------------')
+            await this.startRecording(peer);
         }
-        await this.getRtpStreamsInfo();
-        await this.startRecording();
-    }
-
-    async getRtpStreamsInfoforPeer(peer : Peer){
-        // if(peer.audioPlainTransport && peer.audioConsumer){
-        //     const rtp=peer.audioConsumer?.rtpParameters;
-        //     const codec=rtp?.codecs[0];
-        //     this.consumersInfo.push({
-        //         peerId:peer.userId,
-        //         consumerId:peer.audioConsumer.id,
-        //         kind:'audio',
-        //         codec:codec.mimeType,
-        //         payloadType:codec.payloadType,
-        //         clockRate:codec.clockRate,
-        //         ssrc:(rtp.encodings)?rtp.encodings[0].ssrc!:0,
-        //         port:peer.audioPort!,
-        //         profileLevelId: typeof codec?.parameters?.["profile-level-id"] === "string" ? codec.parameters["profile-level-id"] : 'N/A'
-        //     })
-        //     console.log('consumerId : ',peer.audioConsumer.id,' audioPort : ',peer.audioPort);
-        // }
-
-        if(peer.videoPlainTransport && peer.videoConsumer){
-            const rtp=peer.videoConsumer?.rtpParameters;
-            const codec=rtp?.codecs[0];
-            this.consumersInfo.push({
-                peerId:peer.userId,
-                consumerId:peer.videoConsumer.id,
-                kind:'video',
-                codec:codec.mimeType,
-                payloadType:codec.payloadType,
-                clockRate:codec.clockRate,
-                ssrc:(rtp.encodings)?rtp.encodings[0].ssrc!:0,
-                port:peer.videoPort!,
-                profileLevelId: typeof codec?.parameters?.["profile-level-id"] === "string" ? codec.parameters["profile-level-id"] : 'N/A'
-            })
-            console.log("RTP Parameters:", JSON.stringify(peer.videoConsumer?.rtpParameters, null, 2));
-            console.log('consumerId : ',peer.videoConsumer.id,' videoPort : ',peer.videoPort);
-        }
-    }
-
-    async getRtpStreamsInfo(){
-        for(const peer of this.peers){
-            await this.getRtpStreamsInfoforPeer(peer);
-        }
-        console.log("------ RTP STREAMS INFO for the present peers ------");
-        console.table(this.consumersInfo);
     }
 
     async closePlainTransports(){
@@ -250,10 +187,6 @@ class Room{
             peer.audioPlainTransport?.close();
             peer.videoConsumer?.close();
             peer.audioConsumer?.close();
-            rtpPortPool.releasePort(peer.audioPort!);
-            peer.audioPort=null;
-            rtpPortPool.releasePort(peer.videoPort!);
-            peer.videoPort=null;
         }
         console.log('closing recording');
     }

@@ -2,10 +2,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PortPool = void 0;
 class PortPool {
-    constructor(startPort = 42000, endPort = 43999) {
+    constructor(startPort = 5000, endPort = 6999) {
         this.availablePorts = [];
         for (let p = startPort; p <= endPort; p++) {
-            this.availablePorts.push(p);
+            if (p % 2 === 0)
+                this.availablePorts.push(p);
         }
         this.usedPorts = new Set();
     }
