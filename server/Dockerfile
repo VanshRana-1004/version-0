@@ -21,6 +21,6 @@ RUN npm run build
 EXPOSE 8080
 EXPOSE 40000-41999/udp
 EXPOSE 40000-41999/tcp
-EXPOSE 5000-7000/udp
+EXPOSE 5000-6999/udp
 
 CMD ["npm","run","dev"]

@@ -36,6 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.rtpPool = void 0;
 const http = __importStar(require("http"));
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
@@ -45,6 +46,7 @@ const config_1 = require("./helpers/config");
 const room_1 = __importDefault(require("./classes/room"));
 const peer_1 = __importDefault(require("./classes/peer"));
 const transport_1 = require("./helpers/transport");
+const portpool_1 = __importDefault(require("./helpers/portpool"));
 const app = (0, express_1.default)();
 app.use(express_1.default.json());
 app.use((0, cors_1.default)({
@@ -57,6 +59,7 @@ const server = http.createServer(app);
 const workerPromise = (0, worker_1.CreateWorker)();
 const roomMap = {};
 const peerMap = {};
+exports.rtpPool = new portpool_1.default();
 const io = new socket_io_1.Server(server, {
     cors: {
         origin: '*',
@@ -71,7 +74,7 @@ async function cleanupPeer(socketId, roomId) {
         await peer.closeRecordingConsumers();
     }
     if (peer.userId === room.host) {
-        const otherPeer = room.peers.filter(p => p.userId !== peer.userId);
+        const otherPeer = room.peers.filter((p) => p.userId !== peer.userId);
         console.log('host is leaving room', roomId);
         if (otherPeer.length > 0) {
             console.log('another temp host found');
@@ -174,7 +177,7 @@ io.on('connect', async (socket) => {
         const room = roomMap[roomId];
         if (!room)
             return callback({ error: 'room not found' });
-        const peer = room.peers.find(peer => peer.socketId == socket.id);
+        const peer = room.peers.find((peer) => peer.socketId == socket.id);
         if (!peer)
             return callback({ error: 'peer not found' });
         if (!room.router)

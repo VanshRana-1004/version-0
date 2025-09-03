@@ -1,4 +1,4 @@
-export class PortPool {
+class PortPool {
   private availablePorts: number[];
   private usedPorts: Set<number>;
 
@@ -30,3 +30,4 @@ export class PortPool {
   }
 
 }
+export default PortPool;

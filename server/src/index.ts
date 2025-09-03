@@ -7,6 +7,7 @@ import { mediaCodecs } from './helpers/config';
 import Room from './classes/room';
 import Peer from './classes/peer';
 import { createWebRtcTransport } from './helpers/transport';
+import PortPool from './helpers/portpool';
 
 const app=express();
 app.use(express.json());
@@ -22,6 +23,7 @@ const server: http.Server = http.createServer(app);
 const workerPromise=CreateWorker();
 const roomMap : Record<string,Room>={}
 const peerMap : Record<string,Peer>={}
+export const rtpPool=new PortPool();
 
 const io = new SocketIOServer(server, {
   cors: {
@@ -39,7 +41,7 @@ async function cleanupPeer(socketId: string, roomId: string) {
   }
 
   if(peer.userId===room.host){
-    const otherPeer=room.peers.filter(p=>p.userId!==peer.userId);
+    const otherPeer=room.peers.filter((p : Peer)=>p.userId!==peer.userId);
     console.log('host is leaving room',roomId);
     if(otherPeer.length>0){
       console.log('another temp host found');
@@ -87,7 +89,7 @@ async function cleanupPeer(socketId: string, roomId: string) {
     io.to(roomId).emit("screen-share", { toggle: false });
   }
 
-  room.peers = room.peers.filter((p) => p.socketId !== socketId);
+  room.peers = room.peers.filter((p : Peer) => p.socketId !== socketId);
   delete peerMap[socketId];
 
   io.to(roomId).emit("peer-left",{name});
@@ -143,7 +145,7 @@ io.on('connect', async (socket: Socket) => {
     socket.on('create-transport',async ({roomId,direction},callback)=>{
         const room=roomMap[roomId];
         if(!room) return callback({error : 'room not found'})
-        const peer=room.peers.find(peer=>peer.socketId==socket.id);
+        const peer=room.peers.find((peer : Peer)=>peer.socketId==socket.id);
         if(!peer) return callback({error : 'peer not found'})
         if(!room.router) return callback({error : 'room router not found'})
         const transport = await createWebRtcTransport(room.router);

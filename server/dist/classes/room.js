@@ -7,6 +7,7 @@ const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const create_sdp_1 = require("../helpers/create-sdp");
 const ffmpeg_1 = require("../helpers/ffmpeg");
+const __1 = require("..");
 class Room {
     constructor(roomId, router, userId) {
         this.orgHost = userId;
@@ -16,7 +17,7 @@ class Room {
         this.peers = [];
         this.screen = '';
         this.recording = 0;
-        this.ffmpegProcess = null;
+        this.ffmpegProcesses = new Map();
     }
     getProducers() {
         const producersInfo = [];
@@ -82,21 +83,24 @@ class Room {
             fs_1.default.mkdirSync(recordingDir, { recursive: true });
             console.log("Created recordings directory:", recordingDir);
         }
-        const sdpFileName = `${this.roomId}_${peer.userId}.sdp`;
+        const sdpFileName = `${this.roomId}_${peer.socketId}.sdp`;
         const sdpPath = path_1.default.join(sdpDir, sdpFileName);
         (0, create_sdp_1.createSdpFile)(peer, sdpPath);
-        const outputFileName = `${this.roomId}_${peer.userId}.mp4`;
+        const outputFileName = `${this.roomId}_${peer.socketId}.mp4`;
         const outputPath = path_1.default.join(recordingDir, outputFileName);
         this.recording = 1;
-        this.ffmpegProcess = (0, ffmpeg_1.startFfmpeg)(sdpPath, outputPath);
-        console.log('Recording started for peer : ', peer.userId);
+        const ffmpegProc = (0, ffmpeg_1.startFfmpeg)(sdpPath, outputPath);
+        peer.ffmpegProcess = ffmpegProc;
+        this.ffmpegProcesses.set(peer.socketId, ffmpegProc);
+        console.log('Recording started for peer : ', peer.socketId);
     }
-    async stopRecording() {
-        if (this.ffmpegProcess) {
-            this.ffmpegProcess.stdin.write("q");
-            this.ffmpegProcess = null;
-            this.recording = -1;
-            console.log('Recording stopped');
+    async stopRecording(peer) {
+        const proc = this.ffmpegProcesses.get(peer.socketId);
+        if (proc) {
+            proc.stdin.write("q");
+            proc.stdin.end();
+            this.ffmpegProcesses.delete(peer.socketId);
+            console.log(`FFmpeg stopped for peer ${peer.socketId}`);
         }
     }
     async getPlainTransport() {
@@ -121,7 +125,9 @@ class Room {
                     paused: false
                 });
                 peer.audioConsumer = audioConsumer;
-                await peer.audioPlainTransport.connect({ ip: '127.0.0.1', port: 5004 });
+                const audioPort = __1.rtpPool.acquirePort();
+                await peer.audioPlainTransport.connect({ ip: '127.0.0.1', port: audioPort });
+                peer.audioPort = audioPort;
                 console.log('audio consumer codecs info : ', audioConsumer.rtpParameters.codecs);
             }
             console.log('audio port : ', peer.audioPlainTransport?.tuple.localPort);
@@ -135,13 +141,17 @@ class Room {
                     paused: false
                 });
                 peer.videoConsumer = videoConsumer;
-                await peer.videoPlainTransport.connect({ ip: '127.0.0.1', port: 5006 });
+                const videoPort = __1.rtpPool.acquirePort();
+                await peer.videoPlainTransport.connect({ ip: '127.0.0.1', port: videoPort });
+                peer.videoPort = videoPort;
                 await peer.videoConsumer.requestKeyFrame();
                 setInterval(async () => {
+                    if (peer.videoConsumer && peer.videoConsumer.paused)
+                        return;
                     if (peer.videoConsumer && !peer.videoConsumer.closed) {
                         await peer.videoConsumer.requestKeyFrame();
                     }
-                }, 2000);
+                }, 5000);
                 console.log('video consumer codecs info : ', videoConsumer.rtpParameters.codecs);
             }
             console.log('video port : ', peer.videoPlainTransport?.tuple.localPort);
@@ -160,14 +170,26 @@ class Room {
             await this.startRecording(peer);
         }
     }
+    // stop recording for all the peers
     async closePlainTransports() {
-        await this.stopRecording();
         for (const peer of this.peers) {
+            await this.stopRecording(peer);
             peer.videoPlainTransport?.close();
             peer.audioPlainTransport?.close();
             peer.videoConsumer?.close();
             peer.audioConsumer?.close();
+            if (peer.videoPort)
+                __1.rtpPool.releasePort(peer.videoPort);
+            if (peer.audioPort)
+                __1.rtpPool.releasePort(peer.audioPort);
+            peer.videoPort = null;
+            peer.audioPort = null;
+            peer.videoConsumer = null;
+            peer.audioConsumer = null;
+            peer.videoPlainTransport = null;
+            peer.audioPlainTransport = null;
         }
+        this.recording = -1;
         console.log('closing recording');
     }
 }

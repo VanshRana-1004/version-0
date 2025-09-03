@@ -7,8 +7,8 @@ exports.createSdpFile = createSdpFile;
 const fs_1 = __importDefault(require("fs"));
 function createSdpFile(peer, filePath) {
     const ip = process.env.ANNOUNCED_IP || '127.0.0.1';
-    const audioPort = 5004;
-    const videoPort = 5006;
+    const audioPort = peer.audioPort;
+    const videoPort = peer.videoPort;
     const audioCodec = peer.audioConsumer?.rtpParameters.codecs[0];
     const videoCodec = peer.videoConsumer?.rtpParameters.codecs[0];
     if (!audioCodec || !videoCodec)

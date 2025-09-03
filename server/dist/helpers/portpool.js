@@ -1,6 +1,5 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PortPool = void 0;
 class PortPool {
     constructor(startPort = 5000, endPort = 6999) {
         this.availablePorts = [];
@@ -29,4 +28,4 @@ class PortPool {
         }
     }
 }
-exports.PortPool = PortPool;
+exports.default = PortPool;

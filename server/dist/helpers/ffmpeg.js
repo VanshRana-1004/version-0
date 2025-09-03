@@ -27,3 +27,6 @@ function startFfmpeg(sdpPath, outputPath) {
     });
     return ffmpeg;
 }
+/*-fflags +genpts -use_wallclock_as_timestamps 1
+-max_delay 500000
+*/ 

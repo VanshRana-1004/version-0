@@ -1,4 +1,6 @@
 import { Producer, Transport, Consumer, PlainTransport } from "mediasoup/node/lib/types";
+import { rtpPool } from "..";
+import { ChildProcessWithoutNullStreams } from "child_process";
 
 class Peer{
     public userId : string; 
@@ -18,6 +20,9 @@ class Peer{
     public audioConsumer : Consumer | null;
     public videoPlainTransport : PlainTransport | null;
     public audioPlainTransport : PlainTransport | null;
+    public audioPort:number | null;
+    public videoPort:number | null;
+    public ffmpegProcess : ChildProcessWithoutNullStreams | null;
 
     constructor(name : string,socketId : string,userId : string){
         this.userId=userId;
@@ -37,15 +42,34 @@ class Peer{
         this.audioConsumer=null;
         this.videoPlainTransport=null;
         this.audioPlainTransport=null;
+        this.audioPort=null;
+        this.videoPort=null;
+        this.ffmpegProcess=null;
+    }
+
+    async stopRecording() {
+        if(this.ffmpegProcess){
+            this.ffmpegProcess.stdin.write("q"); 
+            this.ffmpegProcess.stdin.end();
+            this.ffmpegProcess=null;
+            console.log(`FFmpeg stopped for peer ${this.socketId}`);
+        }
     }
 
     async closeRecordingConsumers(){
+        await this.stopRecording();
         this.audioPlainTransport?.close();
         this.videoPlainTransport?.close();
         this.audioConsumer?.close();
         this.videoConsumer?.close();
-        this.audioConsumer=null;
+        if(this.videoPort) rtpPool.releasePort(this.videoPort);
+        if(this.audioPort) rtpPool.releasePort(this.audioPort);
+        this.videoPort=null;
+        this.audioPort=null;    
         this.videoConsumer=null;
+        this.audioConsumer=null;
+        this.videoPlainTransport=null;
+        this.audioPlainTransport=null;
     }
 }
 
