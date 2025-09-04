@@ -330,6 +330,11 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
 
         camProducerRef.current=await sendTransportRef.current.produce({
           track: localStream.getVideoTracks()[0],
+          encodings: [
+            { maxBitrate: 500_000, scaleResolutionDownBy: 2 },  
+            { maxBitrate: 1_500_000, scaleResolutionDownBy: 1 } 
+          ],
+          codecOptions: { videoGoogleStartBitrate: 1200 },
           appData: { mediaTag: 'cam-video' },
         });
         micProducerRef.current=await sendTransportRef.current.produce({
@@ -357,7 +362,7 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
       return;
     }
     const localStream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60, max: 60 }, facingMode: "user" },
+      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 } },
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
     });
     if (localStream && localVideoRef.current) {
@@ -374,7 +379,7 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
         if (micProducerRef.current) {
           await micProducerRef.current.replaceTrack({ track: micTrack });
         }
-      } 
+    } 
   }  
       
   async function toggleCam() {
@@ -391,7 +396,7 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
       } 
       else { 
         const newCamStream = await navigator.mediaDevices.getUserMedia({ 
-          video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60, max: 60 }, facingMode: "user" },
+          video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 } }
         });
         const newCamTrack = newCamStream.getVideoTracks()[0];
         await camProducer.replaceTrack({ track: newCamTrack });
@@ -439,7 +444,7 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
 
     try {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60, max: 60 } },
+        video: { width: 1920, height: 1080, frameRate: { ideal: 15, max: 20 } },
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
       });
 
@@ -459,6 +464,11 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
       if (camTrack) {
         const screenVideoProducer = await sendTransport.produce({
           track: camTrack,
+          encodings: [
+            { maxBitrate: 500_000, scaleResolutionDownBy: 2 },  
+            { maxBitrate: 1_500_000, scaleResolutionDownBy: 1 } 
+          ],
+          codecOptions: { videoGoogleStartBitrate: 1200 },
           appData: { mediaTag: 'screen-video' },
         });
         screenProducerRef.current = screenVideoProducer;

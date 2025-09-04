@@ -22,4 +22,4 @@ export const mediaCodecs:any=[
       clockRate  : 90000,
       parameters : {}
     }        
-]
+] 
