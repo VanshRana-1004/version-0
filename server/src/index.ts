@@ -210,25 +210,28 @@ io.on('connect', async (socket: Socket) => {
       const transport=room.getTransportById(transportId);
       if(!transport) return callback({error : 'transport not found'})
       const producer = await transport.produce({ kind, rtpParameters, appData });
-            
+      const peer=peerMap[socket.id];
+      if(!peer){
+        console.log('peer not found')
+        return callback({error : 'peer not found'})
+      }      
       if (appData.mediaTag === 'cam-video') {
-        peerMap[socket.id].producers.cam = producer;
+        peer.producers.cam = producer;
         console.log('cam producer set')
       }
       else if (appData.mediaTag === 'mic-audio') {
-        peerMap[socket.id].producers.mic = producer;
+        peer.producers.mic = producer;
         console.log('mic producer set')
       }
       else if (appData.mediaTag === 'screen-video') {
-        peerMap[socket.id].producers.screen = producer;
-        console.log('screen producer set')
+        peer.producers.screen = producer;
+        console.log('shared screen producer set')
       }
       else if (appData.mediaTag === 'screen-audio') {
-        peerMap[socket.id].producers.saudio = producer;
-        console.log('screen audio producer set')
+        peer.producers.saudio = producer;
+        console.log('shared screen audio producer set')
       }
       
-
       console.log('producer created successfully');
       callback({ id: producer.id });
       
@@ -303,22 +306,19 @@ io.on('connect', async (socket: Socket) => {
           room.screen=name;
           peer.screen=toggle;
           if(room.recording==1){
-            const waitForProducers = async () => {
-              while (!peer.producers?.screen || !peer.producers?.saudio) {
-                await new Promise(resolve => setTimeout(resolve, 200)); 
-              }
-            };
-
-            await waitForProducers();
             await room.startSharedScreenRecording(peer);
           }
         }
         else{
           room.screen='';
-          peer.screen=toggle;
           if(room.recording==1){
             await room.stopSharedScreenRecording();
-          }
+            peer.screen=toggle;
+            peer.producers.screen?.close();
+            peer.producers.saudio?.close();
+            peer.producers.screen=null;
+            peer.producers.saudio=null;
+          } 
         }
         socket.to(roomId).emit('screen-share',{toggle,name});
         if (callback) callback({ toggle });
@@ -354,25 +354,11 @@ io.on('connect', async (socket: Socket) => {
       const room=roomMap[roomId];
       if(record){
         if(room.recording===0){
-          
           await room.createPlainTransports();
-          
-          if(room.screen!=''){
-            const peer=room.peers.find(p=>(p.screen===true));
-            if(peer){
-              const waitForProducers = async () => {
-                while (!peer.producers?.screen || !peer.producers?.saudio) {
-                  await new Promise(resolve => setTimeout(resolve, 200)); 
-                }
-              };
-
-              await waitForProducers();
-              console.log('Screen-sharing peer producers ready:', peer.producers);
-              await room.startSharedScreenRecording(peer);
-            }
-            
+          if(room.screen!==''){
+            const peer=room.peers.find((p : Peer)=>p.screen==true);
+            if(peer) await room.startSharedScreenRecording(peer);
           }
-
           let recordingInterval: NodeJS.Timeout | null = null;
           recordingInterval=setInterval(async()=>{
             if(room.recording==1){
@@ -389,7 +375,7 @@ io.on('connect', async (socket: Socket) => {
       } 
       else{
         await room.closePlainTransports();
-        if(room.screen!='') await room.stopSharedScreenRecording();
+        if(room.screen!=='') await room.stopSharedScreenRecording();
         let stopRecordingInterval: NodeJS.Timeout | null = null;
         stopRecordingInterval=setInterval(async()=>{
           if(room.recording==-1){

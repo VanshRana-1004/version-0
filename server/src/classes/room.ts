@@ -103,19 +103,70 @@ class Room{
         return null
     }
 
+    // if for any reason ffmpeg process didn't started retry 
+    private async handleRecordingFailure(peer: Peer) {
+        console.log(`Cleaning up failed recording for peer ${peer.socketId}`);
+        await this.stopRecording(peer);
+    }
+
+    private async tryStartRecording(
+        peer: Peer,
+        retries = 3,
+        delay = 1000 
+    ): Promise<void> {
+        try {
+            await this.startRecording(peer);
+        } catch (err) {
+            console.error(`startRecording failed for ${peer.socketId}:`, err);
+
+            if (retries > 0) {
+                console.log(`Retrying recording for ${peer.socketId} in ${delay}ms... (${retries} retries left)`);
+                setTimeout(() => {
+                    this.tryStartRecording(peer, retries - 1, delay);
+                }, delay);
+            } else {
+                console.error(`Recording permanently failed for ${peer.socketId} after retries.`);
+                await this.handleRecordingFailure(peer);
+            }
+        }
+    }
+
     async startRecording(peer : Peer) {
 
         const sdpFileName=`${this.roomId}_${peer.socketId}.sdp`;
         const sdpPath=path.join(sdpDir,sdpFileName);
         if(!peer.audioConsumer || !peer.videoConsumer || !peer.audioPort || !peer.videoPort) return;
 
+        
         createSdpFile(peer.audioConsumer,peer.videoConsumer,peer.audioPort,peer.videoPort,sdpPath);
         
         const outputFileName=`${this.roomId}_${peer.socketId}.mp4`;
         const outputPath=path.join(recordingDir,outputFileName);
 
-        this.recording=1;
         const ffmpegProc=startFfmpeg(sdpPath,outputPath); 
+
+        ffmpegProc.on("error", (err) => {
+            // console.error(`FFmpeg process error for peer ${peer.socketId}:`, err);
+            this.tryStartRecording(peer);
+        });
+
+        ffmpegProc.on("exit", (code, signal) => {
+            // console.warn(`FFmpeg exited for peer ${peer.socketId} with code=${code}, signal=${signal}`);
+            if (code !== 0) {
+                this.tryStartRecording(peer);
+            }
+        });
+
+        ffmpegProc.stderr.on("data", (data) => {
+            const msg = data.toString();
+            if (msg.toLowerCase().includes("error")) {
+                // console.error(`FFmpeg stderr [${peer.socketId}]:`, msg);
+            }
+        });
+
+        this.ffmpegProcesses.set(peer.socketId, ffmpegProc);
+        console.log("Recording started for peer:", peer.socketId);
+        
         this.ffmpegProcesses.set(peer.socketId, ffmpegProc);
         console.log('Recording started for peer : ',peer.socketId);
     }
@@ -188,7 +239,7 @@ class Room{
                     if (peer.videoConsumer && !peer.videoConsumer.closed) {
                         await peer.videoConsumer.requestKeyFrame();
                     }
-                }, 5000);
+                }, 500);
                 console.log('video consumer codecs info : ',videoConsumer.rtpParameters.codecs);
             }
             console.log('video port : ',peer.videoPlainTransport?.tuple.localPort);
@@ -214,7 +265,7 @@ class Room{
 
         await Promise.all(startRecordingPromises); 
         console.log('All recordings started concurrently');
-
+        this.recording=1;
     }
 
     // stop recording for all the peers
@@ -230,49 +281,74 @@ class Room{
     async startSharedScreenRecording(peer : Peer){
         if(!this.router) return;
         
-        if(!peer.producers.screen) console.log('No screen producer found for peer : ',peer.socketId);
-        if(!peer.producers.saudio) console.log('No screen audio producer found for peer : ',peer.socketId);
+        function waitForScreenProducers(peer: Peer, timeout = 5000): Promise<void> {
+            return new Promise((resolve, reject) => {
+                const start = Date.now();
 
-        if(peer.producers.screen){
-            const screenTransport=await this.getPlainTransport();
-            if(!screenTransport) return;
-            this.screenTransport=screenTransport;
-            const screenConsumer=await screenTransport.consume({
-                producerId:peer.producers.screen.id,
-                rtpCapabilities:this.router.rtpCapabilities, 
-                paused:false
-            })
-            this.screenConsumer=screenConsumer;
-            const screenPort=rtpPool.acquirePort();
-            this.screenPort=screenPort;
-            await this.screenTransport.connect({ip:'127.0.0.1',port:screenPort})
-            await this.screenConsumer.requestKeyFrame();
-            setInterval(async () => {
-                if (this.screenConsumer && this.screenConsumer.paused) return;
-                if (this.screenConsumer && !this.screenConsumer.closed) {
-                    await this.screenConsumer.requestKeyFrame();
+                const check = () => {
+                if (peer.producers.screen && peer.producers.saudio) {
+                    resolve();
+                } else if (Date.now() - start >= timeout) {
+                    reject(new Error("Timeout waiting for screen producers"));
+                } else {
+                    setTimeout(check, 200);
                 }
-            }, 5000);
-            console.log('screen consumer codecs info : ',screenConsumer.rtpParameters.codecs);
+                };
+
+                check();
+            });
         }
 
-        if(peer.producers.saudio){
-            const saudioTransport=await this.getPlainTransport();
-            if(!saudioTransport) return;
-            this.saudioTransport=saudioTransport;
-            const saudioConsumer=await saudioTransport.consume({
-                producerId:peer.producers.saudio.id,
-                rtpCapabilities:this.router.rtpCapabilities, 
-                paused:false
-            })
-            this.saudioConsumer=saudioConsumer;
-            const saudioPort=rtpPool.acquirePort();
-            this.saudioPort=saudioPort;
-            await this.saudioTransport.connect({ip:'127.0.0.1',port:saudioPort})
-            console.log('screen audio consumer codecs info : ',saudioConsumer.rtpParameters.codecs);
-        }
+        await waitForScreenProducers(peer)
+        .then(async () => {
+            console.log("Both screen & audio producers ready");
+            if(!this.router) return;
 
-        this.startScreenFFmpegProcess();
+            if(peer.producers.screen){
+                const screenTransport=await this.getPlainTransport();
+                if(!screenTransport) return;
+                this.screenTransport=screenTransport;
+                const screenConsumer=await screenTransport.consume({
+                    producerId:peer.producers.screen.id,
+                    rtpCapabilities:this.router.rtpCapabilities, 
+                    paused:false
+                })
+                this.screenConsumer=screenConsumer;
+                const screenPort=rtpPool.acquirePort();
+                this.screenPort=screenPort;
+                await this.screenTransport.connect({ip:'127.0.0.1',port:screenPort})
+                await this.screenConsumer.requestKeyFrame();
+                setInterval(async () => {
+                    if (this.screenConsumer && this.screenConsumer.paused) return;
+                    if (this.screenConsumer && !this.screenConsumer.closed) {
+                        await this.screenConsumer.requestKeyFrame();
+                    }
+                }, 500);
+                console.log('screen consumer codecs info : ',screenConsumer.rtpParameters.codecs);
+            }
+
+            if(peer.producers.saudio){
+                const saudioTransport=await this.getPlainTransport();
+                if(!saudioTransport) return;
+                this.saudioTransport=saudioTransport;
+                const saudioConsumer=await saudioTransport.consume({
+                    producerId:peer.producers.saudio.id,
+                    rtpCapabilities:this.router.rtpCapabilities, 
+                    paused:false
+                })
+                this.saudioConsumer=saudioConsumer;
+                const saudioPort=rtpPool.acquirePort();
+                this.saudioPort=saudioPort;
+                await this.saudioTransport.connect({ip:'127.0.0.1',port:saudioPort})
+                console.log('screen audio consumer codecs info : ',saudioConsumer.rtpParameters.codecs);
+            }
+
+            this.startScreenFFmpegProcess();
+        })
+        .catch(err => {
+            console.error("Failed to get both producers:", err);
+        });
+
     }
 
     // to actually start the FFmpeg process for recording screen
@@ -286,6 +362,12 @@ class Room{
         createSdpFile(this.saudioConsumer,this.screenConsumer,this.saudioPort,this.screenPort,sdpPath);
         const ffmpegProc=startFfmpeg(sdpPath,outputPath); 
         this.screenFFmpegProcess=ffmpegProc;
+        this.screenFFmpegProcess.on("exit", (code) => {
+            if (code !== 0) {
+                console.log("Retrying screen recording in 1s...");
+                setTimeout(() => this.startScreenFFmpegProcess(), 1000);
+            }
+        });
         console.log('Screen Recording started');
     }
 
@@ -316,5 +398,3 @@ class Room{
 }
 
 export default Room;
-
-// screen already shared and after that we start recording 
