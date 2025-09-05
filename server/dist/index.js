@@ -49,6 +49,7 @@ const transport_1 = require("./helpers/transport");
 const portpool_1 = __importDefault(require("./helpers/portpool"));
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const timeline_1 = require("./layout-helpers/timeline");
 const app = (0, express_1.default)();
 app.use(express_1.default.json());
 app.use((0, cors_1.default)({
@@ -61,6 +62,7 @@ const server = http.createServer(app);
 const workerPromise = (0, worker_1.CreateWorker)();
 const roomMap = {};
 const peerMap = {};
+const recordingMap = {};
 exports.rtpPool = new portpool_1.default();
 const io = new socket_io_1.Server(server, {
     cors: {
@@ -142,7 +144,6 @@ async function cleanupPeer(socketId, roomId) {
         if (room.recording == 1)
             room.closePlainTransports();
         console.log(`[server] room ${roomId} is now empty, cleaning up`);
-        delete roomMap[roomId];
     }
 }
 io.on('connect', async (socket) => {
@@ -178,7 +179,6 @@ io.on('connect', async (socket) => {
         socket.to(roomId).emit('joined', { name: name });
         socket.emit('new-peer', { peers: peerCount - 1 });
         if (room.recording == 1) {
-            setTimeout(async () => { await room.createPlainTransportsForPeer(peer); }, 2000);
             socket.emit('recording', { record: 1 });
         }
         if (room.screen != '') {
@@ -266,6 +266,10 @@ io.on('connect', async (socket) => {
         else if (appData.mediaTag === 'screen-audio') {
             peer.producers.saudio = producer;
             console.log('shared screen audio producer set');
+        }
+        if (room.recording == 1 && peer.producers.mic && peer.producers.cam && !peer.videoPlainTransport && !peer.audioPlainTransport) {
+            console.log(`[----------start new peer stream recording-----------] Both mic and cam producers found`);
+            await room.createPlainTransportsForPeer(peer);
         }
         console.log('producer created successfully');
         callback({ id: producer.id });
@@ -368,6 +372,10 @@ io.on('connect', async (socket) => {
         const roomId = Object.keys(roomMap).find((rid) => roomMap[rid].peers.includes(peer));
         if (roomId) {
             await cleanupPeer(socket.id, roomId);
+            if (roomMap[roomId].peers.length === 0 && roomMap[roomId].recording !== 0 && recordingMap[roomId] === false) {
+                recordingMap[roomId] = true;
+                await (0, timeline_1.timeline)(roomMap[roomId]);
+            }
         }
     });
     socket.on('chat', ({ roomId, name, time, msg }) => {
@@ -410,6 +418,10 @@ io.on('connect', async (socket) => {
                     stopRecordingInterval = null;
                 }
             }, 1000);
+            if (room.recording !== 0 && recordingMap[roomId] === false) {
+                recordingMap[roomId] = true;
+                await (0, timeline_1.timeline)(room);
+            }
         }
     });
 });
@@ -425,6 +437,7 @@ app.post('/create-call', async (req, res) => {
     try {
         const room = new room_1.default(roomId, router, userId);
         roomMap[roomId] = room;
+        recordingMap[roomId] = false;
         room.router = router;
         console.log('router set successfully');
         res.status(200).json({ message: 'room created successfully' });

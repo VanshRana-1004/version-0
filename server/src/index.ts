@@ -10,6 +10,7 @@ import { createWebRtcTransport } from './helpers/transport';
 import PortPool from './helpers/portpool';
 import fs from 'fs';
 import path from 'path';
+import { timeline } from './layout-helpers/timeline';
 
 const app=express();
 app.use(express.json());
@@ -25,6 +26,7 @@ const server: http.Server = http.createServer(app);
 const workerPromise=CreateWorker();
 const roomMap : Record<string,Room>={}
 const peerMap : Record<string,Peer>={}
+const recordingMap : Record<string,boolean>={}
 export const rtpPool=new PortPool();
 
 const io = new SocketIOServer(server, {
@@ -112,7 +114,6 @@ async function cleanupPeer(socketId: string, roomId: string) {
   if (room.peers.length === 0) {
     if(room.recording==1) room.closePlainTransports();
     console.log(`[server] room ${roomId} is now empty, cleaning up`);
-    delete roomMap[roomId];
   }
 }
 
@@ -146,7 +147,6 @@ io.on('connect', async (socket: Socket) => {
       socket.to(roomId).emit('joined',{name : name});
       socket.emit('new-peer', { peers: peerCount-1 });
       if(room.recording==1){
-        setTimeout(async()=>{await room.createPlainTransportsForPeer(peer)},2000);
         socket.emit('recording',{record : 1});
       } 
       if(room.screen!=''){
@@ -230,6 +230,11 @@ io.on('connect', async (socket: Socket) => {
       else if (appData.mediaTag === 'screen-audio') {
         peer.producers.saudio = producer;
         console.log('shared screen audio producer set')
+      }
+
+      if(room.recording==1 && peer.producers.mic && peer.producers.cam && !peer.videoPlainTransport && !peer.audioPlainTransport){
+        console.log(`[----------start new peer stream recording-----------] Both mic and cam producers found`);
+        await room.createPlainTransportsForPeer(peer);
       }
       
       console.log('producer created successfully');
@@ -343,6 +348,10 @@ io.on('connect', async (socket: Socket) => {
       );
       if (roomId) {
         await cleanupPeer(socket.id, roomId);
+        if(roomMap[roomId].peers.length===0 && roomMap[roomId].recording!==0 && recordingMap[roomId]===false){
+          recordingMap[roomId]=true;
+          await timeline(roomMap[roomId]);
+        }
       }
     });
     
@@ -385,6 +394,10 @@ io.on('connect', async (socket: Socket) => {
             stopRecordingInterval = null;
           }
         },1000);
+        if(room.recording!==0 && recordingMap[roomId]===false){
+          recordingMap[roomId]=true;
+          await timeline(room);
+        }
       }
     })
 })
@@ -401,6 +414,7 @@ app.post('/create-call',async (req,res)=>{
     try{
         const room : Room= new Room(roomId,router, userId);
         roomMap[roomId]=room;
+        recordingMap[roomId]=false;
         room.router=router;
         console.log('router set successfully')
         res.status(200).json({ message : 'room created successfully' });

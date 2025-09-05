@@ -104,12 +104,12 @@ class Room {
         }
     }
     async startRecording(peer) {
-        const sdpFileName = `${this.roomId}_${peer.socketId}.sdp`;
+        const sdpFileName = `${this.roomId}_${Date.now()}_${peer.socketId}.sdp`;
         const sdpPath = path_1.default.join(sdpDir, sdpFileName);
         if (!peer.audioConsumer || !peer.videoConsumer || !peer.audioPort || !peer.videoPort)
             return;
         (0, create_sdp_1.createSdpFile)(peer.audioConsumer, peer.videoConsumer, peer.audioPort, peer.videoPort, sdpPath);
-        const outputFileName = `${this.roomId}_${peer.socketId}.mp4`;
+        const outputFileName = `${this.roomId}_${Date.now()}_${peer.socketId}.mp4`;
         const outputPath = path_1.default.join(recordingDir, outputFileName);
         const ffmpegProc = (0, ffmpeg_1.startFfmpeg)(sdpPath, outputPath);
         ffmpegProc.on("error", (err) => {
@@ -136,9 +136,8 @@ class Room {
     async stopRecording(peer) {
         const proc = this.ffmpegProcesses.get(peer.socketId);
         if (proc) {
-            proc.stdin.write("q");
+            proc.stdin.write("q\n");
             proc.stdin.end();
-            this.ffmpegProcesses.delete(peer.socketId);
             console.log(`FFmpeg stopped for peer ${peer.socketId}`);
         }
         peer.videoPlainTransport?.close();
@@ -310,9 +309,9 @@ class Room {
     }
     // to actually start the FFmpeg process for recording screen
     async startScreenFFmpegProcess() {
-        const sdpFileName = `${this.roomId}_screen.sdp`;
+        const sdpFileName = `${this.roomId}_${Date.now()}_screen.sdp`;
         const sdpPath = path_1.default.join(sdpDir, sdpFileName);
-        const outputFileName = `${this.roomId}_screen.mp4`;
+        const outputFileName = `${this.roomId}_${Date.now()}_screen.mp4`;
         const outputPath = path_1.default.join(recordingDir, outputFileName);
         if (!this.saudioConsumer || !this.screenConsumer || !this.saudioPort || !this.screenPort)
             return;
@@ -331,9 +330,8 @@ class Room {
     // to stop the shared screen recording
     async stopSharedScreenRecording() {
         if (this.screenFFmpegProcess) {
-            this.screenFFmpegProcess.stdin.write("q");
+            this.screenFFmpegProcess.stdin.write("q\n");
             this.screenFFmpegProcess.stdin.end();
-            this.screenFFmpegProcess = null;
             console.log(`FFmpeg stopped for screen recording`);
         }
         this.screenTransport?.close();
