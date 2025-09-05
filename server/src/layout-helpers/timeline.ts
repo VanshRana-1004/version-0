@@ -2,6 +2,21 @@ import { execSync } from "child_process";
 import Room from "../classes/room";
 import path from "path";
 import fs from "fs";
+import { createLayout } from "./layout";
+
+export type Clip = {
+  file: string;
+  start: number;
+  end: number;
+  type: string;
+  duration: number;
+};
+
+export type TimelineSegment = {
+  start: number;
+  end: number;
+  active: Clip[];
+};
 
 function waitUntilRecordingStopped(room: Room): Promise<void> {
   return new Promise(resolve => {
@@ -32,6 +47,34 @@ function getDuration(filePath: string): number {
   return parseFloat(out);
 }
 
+function buildTimeline(clips: Clip[]): TimelineSegment[] {
+  const events: number[] = [];
+  clips.forEach(c => {
+    events.push(c.start, c.end);
+  });
+
+  const boundaries = Array.from(new Set(events)).sort((a, b) => a - b);
+
+  const segments: TimelineSegment[] = [];
+
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    const segStart = boundaries[i];
+    const segEnd = boundaries[i + 1];
+    const active = clips.filter(c => c.start <= segStart && c.end >= segEnd);
+    if (active.length > 0) {
+      segments.push({
+        start: segStart,
+        end: segEnd,
+        active
+      });
+    }
+  }
+
+  return segments;
+}
+
+const finalClipsDir=path.join(__dirname,'../../final-recordings');
+
 export async function timeline(room : Room){
     const sdpDir=path.join(__dirname,'../../sdp');
     const sdpFiles = fs.readdirSync(sdpDir).filter(f => f.startsWith(room.roomId));
@@ -49,7 +92,7 @@ export async function timeline(room : Room){
 
     console.log(recordingFiles);
 
-    const clips = recordingFiles.map(file => {
+    const clips  : Clip[]= recordingFiles.map(file => {
         const fullPath = path.join(recordingDir, file);
         const duration = getDuration(fullPath);
 
@@ -64,7 +107,15 @@ export async function timeline(room : Room){
 
         return { file: fullPath, start, end, type, duration };
     });
-
     console.log(clips);
+
+    const finalTimeLine : TimelineSegment[]=buildTimeline(clips);
+    console.log(finalTimeLine);
+
+    for (const [ind, segment] of finalTimeLine.entries()) {
+      const outputFile = `${room.roomId}_${ind}.mp4`;
+      const outputPath=path.join(finalClipsDir,outputFile);
+      await createLayout(segment, outputPath); 
+    }
 
 }

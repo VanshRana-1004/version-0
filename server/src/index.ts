@@ -46,6 +46,12 @@ if(!fs.existsSync(recordingDir)){
     console.log("Created recordings directory:", recordingDir);
 }
 
+const finalClipsDir=path.join(__dirname,'../final-recordings');
+if(!fs.existsSync(finalClipsDir)){
+    fs.mkdirSync(finalClipsDir, { recursive: true });
+    console.log("Created recordings directory:", finalClipsDir);
+}
+
 async function cleanupPeer(socketId: string, roomId: string) {
   const room = roomMap[roomId];
   const peer = peerMap[socketId];

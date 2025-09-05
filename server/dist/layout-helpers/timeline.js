@@ -7,6 +7,7 @@ exports.timeline = timeline;
 const child_process_1 = require("child_process");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
+const layout_1 = require("./layout");
 function waitUntilRecordingStopped(room) {
     return new Promise(resolve => {
         const interval = setInterval(() => {
@@ -32,6 +33,28 @@ function getDuration(filePath) {
     const out = (0, child_process_1.execSync)(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`).toString();
     return parseFloat(out);
 }
+function buildTimeline(clips) {
+    const events = [];
+    clips.forEach(c => {
+        events.push(c.start, c.end);
+    });
+    const boundaries = Array.from(new Set(events)).sort((a, b) => a - b);
+    const segments = [];
+    for (let i = 0; i < boundaries.length - 1; i++) {
+        const segStart = boundaries[i];
+        const segEnd = boundaries[i + 1];
+        const active = clips.filter(c => c.start <= segStart && c.end >= segEnd);
+        if (active.length > 0) {
+            segments.push({
+                start: segStart,
+                end: segEnd,
+                active
+            });
+        }
+    }
+    return segments;
+}
+const finalClipsDir = path_1.default.join(__dirname, '../../final-recordings');
 async function timeline(room) {
     const sdpDir = path_1.default.join(__dirname, '../../sdp');
     const sdpFiles = fs_1.default.readdirSync(sdpDir).filter(f => f.startsWith(room.roomId));
@@ -56,4 +79,11 @@ async function timeline(room) {
         return { file: fullPath, start, end, type, duration };
     });
     console.log(clips);
+    const finalTimeLine = buildTimeline(clips);
+    console.log(finalTimeLine);
+    for (const [ind, segment] of finalTimeLine.entries()) {
+        const outputFile = `${room.roomId}_${ind}.mp4`;
+        const outputPath = path_1.default.join(finalClipsDir, outputFile);
+        await (0, layout_1.createLayout)(segment, outputPath);
+    }
 }
