@@ -6,7 +6,9 @@ function startFfmpeg(sdpPath, outputPath) {
     const ffmpegArgs = [
         "-protocol_whitelist", "file,udp,rtp",
         "-i", sdpPath,
-        "-c:v", "copy",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "18",
         "-g", "60",
         "-c:a", "aac",
         "-b:a", "160k",
