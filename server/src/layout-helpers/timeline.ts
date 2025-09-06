@@ -100,34 +100,6 @@ export async function timeline(room : Room){
     
     console.log(`[timeline] all recordings for room ${room.roomId} have stopped and all ffmpeg processes have finished`);
 
-    room.peers.forEach(peer=>{
-      peer.videoPlainTransport?.close();
-      peer.audioPlainTransport?.close();
-      peer.videoConsumer?.close();
-      peer.audioConsumer?.close();
-      if(peer.videoPort) rtpPool.releasePort(peer.videoPort);
-      if(peer.audioPort) rtpPool.releasePort(peer.audioPort);
-      peer.videoPort=null;
-      peer.audioPort=null;    
-      peer.videoConsumer=null;
-      peer.audioConsumer=null;
-      peer.videoPlainTransport=null;
-      peer.audioPlainTransport=null;
-    })
-    room.screenTransport?.close();
-    room.saudioTransport?.close();
-    room.screenConsumer?.close();
-    room.saudioConsumer?.close();
-    if(room.screenPort) rtpPool.releasePort(room.screenPort);
-    if(room.saudioPort) rtpPool.releasePort(room.saudioPort);
-    room.screenPort=null;
-    room.saudioPort=null;    
-    room.screenConsumer=null;
-    room.saudioConsumer=null;
-    room.screenTransport=null;
-    room.saudioTransport=null;
-    room.screen='';
-
     const recordingDir=path.join(__dirname,'../../recordings');
     const recordingFiles=fs.readdirSync(recordingDir).filter(f=>f.startsWith(room.roomId));
 

@@ -138,6 +138,20 @@ class Room {
         if (proc) {
             proc.stdin.write("q\n");
             proc.stdin.end();
+            peer.videoPlainTransport?.close();
+            peer.audioPlainTransport?.close();
+            peer.videoConsumer?.close();
+            peer.audioConsumer?.close();
+            if (peer.videoPort)
+                __1.rtpPool.releasePort(peer.videoPort);
+            if (peer.audioPort)
+                __1.rtpPool.releasePort(peer.audioPort);
+            peer.videoPort = null;
+            peer.audioPort = null;
+            peer.videoConsumer = null;
+            peer.audioConsumer = null;
+            peer.videoPlainTransport = null;
+            peer.audioPlainTransport = null;
             console.log(`FFmpeg stopped for peer ${peer.socketId}`);
         }
     }
@@ -318,6 +332,21 @@ class Room {
         if (this.screenFFmpegProcess) {
             this.screenFFmpegProcess.stdin.write("q\n");
             this.screenFFmpegProcess.stdin.end();
+            this.screenTransport?.close();
+            this.saudioTransport?.close();
+            this.screenConsumer?.close();
+            this.saudioConsumer?.close();
+            if (this.screenPort)
+                __1.rtpPool.releasePort(this.screenPort);
+            if (this.saudioPort)
+                __1.rtpPool.releasePort(this.saudioPort);
+            this.screenPort = null;
+            this.saudioPort = null;
+            this.screenConsumer = null;
+            this.saudioConsumer = null;
+            this.screenTransport = null;
+            this.saudioTransport = null;
+            this.screen = '';
             console.log(`FFmpeg stopped for screen recording`);
         }
         console.log('Stopped shared screen recording');
