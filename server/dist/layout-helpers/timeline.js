@@ -8,6 +8,15 @@ const child_process_1 = require("child_process");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const layout_1 = require("./layout");
+function hasAudioStream(file) {
+    try {
+        const out = (0, child_process_1.execSync)(`ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 "${file}"`).toString().trim();
+        return out === "audio";
+    }
+    catch {
+        return false;
+    }
+}
 function waitUntilRecordingStopped(room) {
     return new Promise(resolve => {
         const interval = setInterval(() => {
@@ -73,10 +82,11 @@ async function timeline(room) {
         const [roomId, ts, lastPart] = file.split("_");
         const timestamp = Number(ts);
         const base = lastPart.replace(/\..+$/, "");
+        const audio = hasAudioStream(fullPath);
         const type = (base === 'screen') ? base : 'peer';
         const start = parseInt(ts, 10);
         const end = start + duration * 1000;
-        return { file: fullPath, start, end, type, duration };
+        return { file: fullPath, start, end, type, audio, duration };
     });
     console.log(clips);
     const finalTimeLine = buildTimeline(clips);

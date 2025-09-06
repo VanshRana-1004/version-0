@@ -9,6 +9,7 @@ export type Clip = {
   start: number;
   end: number;
   type: string;
+  audio: boolean;
   duration: number;
 };
 
@@ -17,6 +18,17 @@ export type TimelineSegment = {
   end: number;
   active: Clip[];
 };
+
+function hasAudioStream(file: string): boolean {
+  try {
+    const out = execSync(
+      `ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 "${file}"`
+    ).toString().trim();
+    return out === "audio";
+  } catch {
+    return false;
+  }
+}
 
 function waitUntilRecordingStopped(room: Room): Promise<void> {
   return new Promise(resolve => {
@@ -99,13 +111,14 @@ export async function timeline(room : Room){
         const [roomId, ts, lastPart] = file.split("_");
         const timestamp = Number(ts);
         const base = lastPart.replace(/\..+$/, ""); 
+        const audio=hasAudioStream(fullPath);
 
         const  type: "screen" | "peer"=(base==='screen')?base:'peer';
 
         const start = parseInt(ts, 10);
         const end = start + duration * 1000;
 
-        return { file: fullPath, start, end, type, duration };
+        return { file: fullPath, start, end, type, audio, duration };
     });
     console.log(clips);
 
