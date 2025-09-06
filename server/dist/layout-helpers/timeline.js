@@ -80,7 +80,15 @@ async function timeline(room) {
     });
     console.log(clips);
     const finalTimeLine = buildTimeline(clips);
-    console.log(finalTimeLine);
+    console.log('Final Time line : ');
+    finalTimeLine.forEach((segment) => {
+        console.log('segment start : ', segment.start);
+        console.log('segment end : ', segment.end);
+        console.log('Clips : ');
+        segment.active.forEach((clip) => {
+            console.log(clip);
+        });
+    });
     for (const [ind, segment] of finalTimeLine.entries()) {
         const outputFile = `${room.roomId}_${ind}.mp4`;
         const outputPath = path_1.default.join(finalClipsDir, outputFile);

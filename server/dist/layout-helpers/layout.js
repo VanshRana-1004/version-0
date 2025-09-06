@@ -9,7 +9,13 @@ async function createLayout(segment, outputPath) {
     const screen = segment.active.filter((clip) => clip.type === 'screen');
     const peers = segment.active.filter((clip) => clip.type !== 'screen');
     const peerTrim = [];
-    peers.forEach((p) => peerTrim.push((p.start - start) / 1000));
+    peers.forEach((p) => peerTrim.push((Math.abs(start - p.start)) / 1000));
+    console.log('[layout] : duration for this segment : ', duration);
+    console.log('[layout] peers along with their duration & trims : ');
+    peers.forEach((clip, ind) => {
+        console.log('duration : ', clip.duration);
+        console.log(peerTrim[ind]);
+    });
     let command = '';
     if (screen.length > 0) {
         const screenTrim = (screen[0].start - start) / 1000;
