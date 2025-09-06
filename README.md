@@ -9,8 +9,7 @@ Supports up to 5 peers per room, screen sharing, and private chat.
 - Private chat per room
 
 # Note: 
-- Right now only per-peer recording is implemented.
-- Post-processing with FFmpeg (merging + layout per room) will be added later.
+- The final video for a room will be divided into segments, where each segment corresponds to a time interval with the same set of active clips.
 
 # Tech Stack
 - Mediasoup (SFU)
