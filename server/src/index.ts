@@ -111,9 +111,6 @@ async function cleanupPeer(socketId: string, roomId: string) {
     io.to(roomId).emit("screen-share", { toggle: false });
   }
 
-  room.peers = room.peers.filter((p : Peer) => p.socketId !== socketId);
-  delete peerMap[socketId];
-
   io.to(roomId).emit("peer-left",{name});
 
   console.log(`[server] peer ${socketId} removed from room ${roomId}`);

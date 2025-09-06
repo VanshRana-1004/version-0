@@ -3,6 +3,7 @@ import Room from "../classes/room";
 import path from "path";
 import fs from "fs";
 import { createLayout } from "./layout";
+import { rtpPool } from "..";
 
 export type Clip = {
   file: string;
@@ -99,6 +100,34 @@ export async function timeline(room : Room){
     
     console.log(`[timeline] all recordings for room ${room.roomId} have stopped and all ffmpeg processes have finished`);
 
+    room.peers.forEach(peer=>{
+      peer.videoPlainTransport?.close();
+      peer.audioPlainTransport?.close();
+      peer.videoConsumer?.close();
+      peer.audioConsumer?.close();
+      if(peer.videoPort) rtpPool.releasePort(peer.videoPort);
+      if(peer.audioPort) rtpPool.releasePort(peer.audioPort);
+      peer.videoPort=null;
+      peer.audioPort=null;    
+      peer.videoConsumer=null;
+      peer.audioConsumer=null;
+      peer.videoPlainTransport=null;
+      peer.audioPlainTransport=null;
+    })
+    room.screenTransport?.close();
+    room.saudioTransport?.close();
+    room.screenConsumer?.close();
+    room.saudioConsumer?.close();
+    if(room.screenPort) rtpPool.releasePort(room.screenPort);
+    if(room.saudioPort) rtpPool.releasePort(room.saudioPort);
+    room.screenPort=null;
+    room.saudioPort=null;    
+    room.screenConsumer=null;
+    room.saudioConsumer=null;
+    room.screenTransport=null;
+    room.saudioTransport=null;
+    room.screen='';
+
     const recordingDir=path.join(__dirname,'../../recordings');
     const recordingFiles=fs.readdirSync(recordingDir).filter(f=>f.startsWith(room.roomId));
 
@@ -132,9 +161,16 @@ export async function timeline(room : Room){
         console.log(clip);
       })
     })
-
-    for (const [ind, segment] of finalTimeLine.entries()) {
-      const outputFile = `${room.roomId}_${ind}.mp4`;
+    
+    let clipNum=0;
+    for (const segment of finalTimeLine) {
+      const duration=(segment.end-segment.start)/1000;
+      if(duration<2){
+        console.log(`duration is very small can't record this segment`);
+        return;
+      } 
+      clipNum++;
+      const outputFile = `${room.roomId}_${clipNum}.mp4`;
       const outputPath=path.join(finalClipsDir,outputFile);
       await createLayout(segment, outputPath); 
     }

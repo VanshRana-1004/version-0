@@ -51,7 +51,7 @@ async function createLayout(segment, outputPath) {
         audioMap = `-map "[aout]"`;
     }
     if (screen.length > 0) {
-        const screenTrim = (screen[0].start - start) / 1000;
+        const screenTrim = (Math.abs(screen[0].start - start)) / 1000;
         switch (peers.length) {
             case 1:
                 command = `ffmpeg -y -f lavfi -i color=c=black:s=1334x748:d=${duration} -ss ${screenTrim} -i "${screen[0].file}" -ss ${peerTrim[0]} -i "${peers[0].file}" -filter_complex "[1:v]scale=950:534:force_original_aspect_ratio=decrease[sc1];[2:v]scale=377:270:force_original_aspect_ratio=decrease[sc2];[0:v][sc1]overlay=2:2[tmp1];[tmp1][sc2]overlay=954:477[vout]${audioCmd}" -map "[vout]" ${audioMap} -t ${duration} -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 160k "${outputPath}"`;

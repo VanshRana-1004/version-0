@@ -8,6 +8,7 @@ const child_process_1 = require("child_process");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const layout_1 = require("./layout");
+const __1 = require("..");
 function hasAudioStream(file) {
     try {
         const out = (0, child_process_1.execSync)(`ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 "${file}"`).toString().trim();
@@ -73,6 +74,37 @@ async function timeline(room) {
     }
     await waitUntilRecordingStopped(room);
     console.log(`[timeline] all recordings for room ${room.roomId} have stopped and all ffmpeg processes have finished`);
+    room.peers.forEach(peer => {
+        peer.videoPlainTransport?.close();
+        peer.audioPlainTransport?.close();
+        peer.videoConsumer?.close();
+        peer.audioConsumer?.close();
+        if (peer.videoPort)
+            __1.rtpPool.releasePort(peer.videoPort);
+        if (peer.audioPort)
+            __1.rtpPool.releasePort(peer.audioPort);
+        peer.videoPort = null;
+        peer.audioPort = null;
+        peer.videoConsumer = null;
+        peer.audioConsumer = null;
+        peer.videoPlainTransport = null;
+        peer.audioPlainTransport = null;
+    });
+    room.screenTransport?.close();
+    room.saudioTransport?.close();
+    room.screenConsumer?.close();
+    room.saudioConsumer?.close();
+    if (room.screenPort)
+        __1.rtpPool.releasePort(room.screenPort);
+    if (room.saudioPort)
+        __1.rtpPool.releasePort(room.saudioPort);
+    room.screenPort = null;
+    room.saudioPort = null;
+    room.screenConsumer = null;
+    room.saudioConsumer = null;
+    room.screenTransport = null;
+    room.saudioTransport = null;
+    room.screen = '';
     const recordingDir = path_1.default.join(__dirname, '../../recordings');
     const recordingFiles = fs_1.default.readdirSync(recordingDir).filter(f => f.startsWith(room.roomId));
     console.log(recordingFiles);
@@ -99,8 +131,15 @@ async function timeline(room) {
             console.log(clip);
         });
     });
-    for (const [ind, segment] of finalTimeLine.entries()) {
-        const outputFile = `${room.roomId}_${ind}.mp4`;
+    let clipNum = 0;
+    for (const segment of finalTimeLine) {
+        const duration = (segment.end - segment.start) / 1000;
+        if (duration < 2) {
+            console.log(`duration is very small can't record this segment`);
+            return;
+        }
+        clipNum++;
+        const outputFile = `${room.roomId}_${clipNum}.mp4`;
         const outputPath = path_1.default.join(finalClipsDir, outputFile);
         await (0, layout_1.createLayout)(segment, outputPath);
     }
