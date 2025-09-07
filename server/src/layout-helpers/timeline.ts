@@ -23,9 +23,13 @@ export type TimelineSegment = {
 function hasAudioStream(file: string): boolean {
   try {
     const out = execSync(
-      `ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 "${file}"`
+      `ffprobe -v error -select_streams a:0 -count_frames ` +
+      `-show_entries stream=nb_read_frames ` +
+      `-of default=nokey=1:noprint_wrappers=1 "${file}"`
     ).toString().trim();
-    return out === "audio";
+
+    const frames = parseInt(out, 10);
+    return !isNaN(frames) && frames > 0;  
   } catch {
     return false;
   }
@@ -135,16 +139,20 @@ export async function timeline(room : Room){
     })
     
     let clipNum=0;
+    let ind=0;
     for (const segment of finalTimeLine) {
-      const duration=(segment.end-segment.start)/1000;
+      const duration=Math.max(0,(segment.end-segment.start))/1000;
       if(duration<2){
-        console.log(`duration is very small can't record this segment`);
-        return;
+        console.log(`duration is very small can't record this segment ${ind}`);
       } 
-      clipNum++;
-      const outputFile = `${room.roomId}_${clipNum}.mp4`;
-      const outputPath=path.join(finalClipsDir,outputFile);
-      await createLayout(segment, outputPath); 
+      else{
+        console.log(`recording for segement ${ind}`)
+        clipNum++;
+        const outputFile = `${room.roomId}_${clipNum}.mp4`;
+        const outputPath=path.join(finalClipsDir,outputFile);
+        await createLayout(segment, outputPath); 
+      }
+      ind++;
     }
 
 }

@@ -7,7 +7,7 @@ function startFfmpeg(sdpPath, outputPath) {
         "-protocol_whitelist", "file,udp,rtp",
         "-i", sdpPath,
         "-c:v", "libx264",
-        "-preset", "veryfast",
+        "-preset", "ultrafast",
         "-crf", "18",
         "-g", "60",
         "-c:a", "aac",

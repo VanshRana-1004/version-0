@@ -319,7 +319,7 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
       }
 
       const localStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1920, height: 1080, frameRate: 60, facingMode: "user"},
+        video: { width: {ideal : 1920}, height: {ideal : 1080}, frameRate: {ideal: 60}, facingMode: "user"},
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true}
       });
       const localVideoTrack = localStream.getVideoTracks()[0];
@@ -327,7 +327,7 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
         await localVideoTrack.applyConstraints({
           width: 1920,
           height: 1080,
-          frameRate: 60
+          frameRate: {ideal: 60}
         }).catch(err => console.warn("applyConstraints failed:", err));
       }
       console.log("Local video settings:", localVideoTrack?.getSettings());
@@ -339,7 +339,7 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
         camProducerRef.current=await sendTransportRef.current.produce({
           track: localStream.getVideoTracks()[0],
           encodings: [
-            { maxBitrate: 2_500_000, scaleResolutionDownBy: 1 },
+            { rid: 'h', maxBitrate: 2_000_000, scaleResolutionDownBy: 2 }
           ],
           codecOptions: { videoGoogleStartBitrate: 1200 },
           appData: { mediaTag: 'cam-video' },
@@ -369,7 +369,7 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
       return;
     }
     const localStream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 1920, height: 1080, frameRate: 60, facingMode: "user"},
+      video: { width: {ideal : 1920}, height: {ideal : 1080}, frameRate: {ideal: 60} },
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true}
     });
     const localVideoTrack = localStream.getVideoTracks()[0];
@@ -377,7 +377,7 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
       await localVideoTrack.applyConstraints({
         width: 1920,
         height: 1080,
-        frameRate: 60
+        frameRate: {ideal : 60}
       }).catch(err => console.warn("applyConstraints failed:", err));
     }
     console.log("Local video settings:", localVideoTrack?.getSettings());
@@ -472,7 +472,7 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
     try {
       
       const screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { width: 1920, height: 1080, frameRate: 30 },
+        video: { width: {ideal : 1920}, height: {ideal : 1080}, frameRate: {ideal: 60,max :60} },
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
       });
       const screenVideoTrack = screenStream.getVideoTracks()[0];
@@ -480,7 +480,7 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
         await screenVideoTrack.applyConstraints({
           width: 1920,
           height: 1080,
-          frameRate: 30,
+          frameRate: {ideal: 60,max : 60 },
         }).catch(err => console.warn("applyConstraints failed:", err));
       }  
       if (!sendTransport) {
@@ -500,7 +500,7 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
         const screenVideoProducer = await sendTransport.produce({
           track: camTrack,
           encodings: [
-            { maxBitrate: 2_500_000, scaleResolutionDownBy: 1 },  
+            { rid: 'h', maxBitrate: 3_000_000, scaleResolutionDownBy: 2 }
           ],
           codecOptions: { videoGoogleStartBitrate: 1200 },
           appData: { mediaTag: 'screen-video' },

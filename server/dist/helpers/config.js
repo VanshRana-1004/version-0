@@ -25,10 +25,5 @@ exports.mediaCodecs = [
             "packetization-mode": 1,
             "profile-level-id": "42e01f",
         },
-    },
-    {
-        kind: "video",
-        mimeType: "video/VP8",
-        clockRate: 90000,
-    },
+    }
 ];

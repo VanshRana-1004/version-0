@@ -12,6 +12,12 @@ export async function createWebRtcTransport(router: mediasoup.types.Router){
         enableUdp:true,
         enableTcp:true,
         preferUdp:true,
+        rtcpFeedback: {
+            nack: true,
+            pli: true,
+            remb: true,
+            transportCc: true,
+        },
         initialAvailableOutgoingBitrate: 1000000,
         maxIncomingBitrate: 1500000,
         minPort: 40000,
