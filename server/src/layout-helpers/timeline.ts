@@ -3,7 +3,7 @@ import Room from "../classes/room";
 import path from "path";
 import fs from "fs";
 import { createLayout } from "./layout";
-import { rtpPool } from "..";
+import { roomMap } from "..";
 
 export type Clip = {
   file: string;
@@ -92,7 +92,11 @@ function buildTimeline(clips: Clip[]): TimelineSegment[] {
 
 const finalClipsDir=path.join(__dirname,'../../final-recordings');
 
-export async function timeline(room : Room){
+export async function timeline(roomId : string){
+    const room=roomMap[roomId];
+    if(!room){
+      console.log('No room find no finalize recordings')
+    }
     const sdpDir=path.join(__dirname,'../../sdp');
     const sdpFiles = fs.readdirSync(sdpDir).filter(f => f.startsWith(room.roomId));
     if (sdpFiles.length === 0) {

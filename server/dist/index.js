@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.rtpPool = void 0;
+exports.rtpPool = exports.roomMap = void 0;
 const http = __importStar(require("http"));
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
@@ -49,7 +49,9 @@ const transport_1 = require("./helpers/transport");
 const portpool_1 = __importDefault(require("./helpers/portpool"));
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
-const timeline_1 = require("./layout-helpers/timeline");
+const main_1 = require("./redis/main");
+const queue_1 = require("./redis/queue");
+const redis_worker_1 = require("./redis/redis-worker");
 const app = (0, express_1.default)();
 app.use(express_1.default.json());
 app.use((0, cors_1.default)({
@@ -60,10 +62,12 @@ app.use((0, cors_1.default)({
 const PORT = 8080;
 const server = http.createServer(app);
 const workerPromise = (0, worker_1.CreateWorker)();
-const roomMap = {};
+exports.roomMap = {};
 const peerMap = {};
 const recordingMap = {};
 exports.rtpPool = new portpool_1.default();
+(0, main_1.initRedis)();
+(0, redis_worker_1.createRedisWorker)();
 const io = new socket_io_1.Server(server, {
     cors: {
         origin: '*',
@@ -85,7 +89,7 @@ if (!fs_1.default.existsSync(finalClipsDir)) {
     console.log("Created recordings directory:", finalClipsDir);
 }
 async function cleanupPeer(socketId, roomId) {
-    const room = roomMap[roomId];
+    const room = exports.roomMap[roomId];
     const peer = peerMap[socketId];
     if (!room || !peer)
         return;
@@ -152,7 +156,7 @@ async function cleanupPeer(socketId, roomId) {
 }
 io.on('connect', async (socket) => {
     socket.on('join-room', async ({ roomId, name, userId }, callback) => {
-        const room = roomMap[roomId];
+        const room = exports.roomMap[roomId];
         socket.join(roomId);
         if (!room)
             return callback({ error: 'room not found' });
@@ -192,7 +196,7 @@ io.on('connect', async (socket) => {
         callback({ routerRtpCapabilities: room.router.rtpCapabilities, producers: producers, shared: room.screen });
     });
     socket.on('create-transport', async ({ roomId, direction }, callback) => {
-        const room = roomMap[roomId];
+        const room = exports.roomMap[roomId];
         if (!room)
             return callback({ error: 'room not found' });
         const peer = room.peers.find((peer) => peer.socketId == socket.id);
@@ -223,7 +227,7 @@ io.on('connect', async (socket) => {
     });
     socket.on('connect-transport', async ({ roomId, transportId, dtlsParameters }, callback) => {
         try {
-            const room = roomMap[roomId];
+            const room = exports.roomMap[roomId];
             if (!room)
                 return callback({ error: 'room not found' });
             const transport = room.getTransportById(transportId);
@@ -243,7 +247,7 @@ io.on('connect', async (socket) => {
     });
     socket.on('produce', async ({ roomId, transportId, kind, rtpParameters, appData }, callback) => {
         console.log('request to create producer');
-        const room = roomMap[roomId];
+        const room = exports.roomMap[roomId];
         if (!room)
             return callback({ error: 'room not found' });
         const transport = room.getTransportById(transportId);
@@ -287,7 +291,7 @@ io.on('connect', async (socket) => {
     socket.on('consume', async ({ roomId, producerId, rtpCapabilities }, callback) => {
         console.log('[server] consume request', { roomId, producerId, socketId: socket.id });
         try {
-            const room = roomMap[roomId];
+            const room = exports.roomMap[roomId];
             if (!room) {
                 console.log('[server] consume failed: room not found', roomId);
                 return callback({ error: 'room not found' });
@@ -331,7 +335,7 @@ io.on('connect', async (socket) => {
         }
     });
     socket.on('screen-share', async ({ roomId, toggle, name }, callback) => {
-        const room = roomMap[roomId];
+        const room = exports.roomMap[roomId];
         if (room) {
             const peer = peerMap[socket.id];
             if (toggle) {
@@ -360,7 +364,7 @@ io.on('connect', async (socket) => {
         }
     });
     socket.on("resume-consumer", async ({ roomId, consumerId }) => {
-        const room = roomMap[roomId];
+        const room = exports.roomMap[roomId];
         if (!room)
             return;
         const consumer = room.getConsumerById(consumerId);
@@ -373,12 +377,12 @@ io.on('connect', async (socket) => {
         const peer = peerMap[socket.id];
         if (!peer)
             return;
-        const roomId = Object.keys(roomMap).find((rid) => roomMap[rid].peers.includes(peer));
+        const roomId = Object.keys(exports.roomMap).find((rid) => exports.roomMap[rid].peers.includes(peer));
         if (roomId) {
             await cleanupPeer(socket.id, roomId);
-            if (roomMap[roomId].peers.length === 0 && roomMap[roomId].recording !== 0 && recordingMap[roomId] === false) {
+            if (exports.roomMap[roomId].peers.length === 0 && exports.roomMap[roomId].recording !== 0 && recordingMap[roomId] === false) {
                 recordingMap[roomId] = true;
-                await (0, timeline_1.timeline)(roomMap[roomId]);
+                await (0, queue_1.enqueueRoomJob)(roomId);
             }
         }
     });
@@ -386,7 +390,7 @@ io.on('connect', async (socket) => {
         socket.to(roomId).emit('chat', { name, time, msg });
     });
     socket.on('recording', async ({ roomId, record }) => {
-        const room = roomMap[roomId];
+        const room = exports.roomMap[roomId];
         if (record) {
             if (room.recording === 0) {
                 await room.createPlainTransports();
@@ -424,7 +428,7 @@ io.on('connect', async (socket) => {
             }, 1000);
             if (room.recording !== 0 && recordingMap[roomId] === false) {
                 recordingMap[roomId] = true;
-                await (0, timeline_1.timeline)(room);
+                await (0, queue_1.enqueueRoomJob)(roomId);
             }
         }
     });
@@ -440,7 +444,7 @@ app.post('/create-call', async (req, res) => {
         console.log('router created successfully.');
     try {
         const room = new room_1.default(roomId, router, userId);
-        roomMap[roomId] = room;
+        exports.roomMap[roomId] = room;
         recordingMap[roomId] = false;
         room.router = router;
         console.log('router set successfully');
@@ -453,7 +457,7 @@ app.post('/create-call', async (req, res) => {
 app.post('/join-call', async (req, res) => {
     const { roomId } = req.body;
     try {
-        const room = roomMap[roomId];
+        const room = exports.roomMap[roomId];
         if (room) {
             res.status(200).json({ message: 'room joined successfully' });
         }

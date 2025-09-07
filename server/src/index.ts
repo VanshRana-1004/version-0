@@ -10,7 +10,9 @@ import { createWebRtcTransport } from './helpers/transport';
 import PortPool from './helpers/portpool';
 import fs from 'fs';
 import path from 'path';
-import { timeline } from './layout-helpers/timeline';
+import { initRedis } from './redis/main';
+import { enqueueRoomJob } from './redis/queue';
+import { createRedisWorker } from './redis/redis-worker';
 
 const app=express();
 app.use(express.json());
@@ -24,10 +26,12 @@ app.use(cors({
 const PORT = 8080;
 const server: http.Server = http.createServer(app);
 const workerPromise=CreateWorker();
-const roomMap : Record<string,Room>={}
+export const roomMap : Record<string,Room>={}
 const peerMap : Record<string,Peer>={}
 const recordingMap : Record<string,boolean>={}
 export const rtpPool=new PortPool();
+initRedis();
+createRedisWorker();
 
 const io = new SocketIOServer(server, {
   cors: {
@@ -45,7 +49,6 @@ if(!fs.existsSync(recordingDir)){
     fs.mkdirSync(recordingDir, { recursive: true });
     console.log("Created recordings directory:", recordingDir);
 }
-
 const finalClipsDir=path.join(__dirname,'../final-recordings');
 if(!fs.existsSync(finalClipsDir)){
     fs.mkdirSync(finalClipsDir, { recursive: true });
@@ -353,7 +356,7 @@ io.on('connect', async (socket: Socket) => {
         await cleanupPeer(socket.id, roomId);
         if(roomMap[roomId].peers.length===0 && roomMap[roomId].recording!==0 && recordingMap[roomId]===false){
           recordingMap[roomId]=true;
-          await timeline(roomMap[roomId]);
+          await enqueueRoomJob(roomId);
         }
       }
     });
@@ -399,7 +402,7 @@ io.on('connect', async (socket: Socket) => {
         },1000);
         if(room.recording!==0 && recordingMap[roomId]===false){
           recordingMap[roomId]=true;
-          await timeline(room);
+          await enqueueRoomJob(roomId);
         }
       }
     })

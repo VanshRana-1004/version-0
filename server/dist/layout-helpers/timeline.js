@@ -8,6 +8,7 @@ const child_process_1 = require("child_process");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const layout_1 = require("./layout");
+const __1 = require("..");
 function hasAudioStream(file) {
     try {
         const out = (0, child_process_1.execSync)(`ffprobe -v error -select_streams a:0 -count_frames ` +
@@ -67,7 +68,11 @@ function buildTimeline(clips) {
     return segments;
 }
 const finalClipsDir = path_1.default.join(__dirname, '../../final-recordings');
-async function timeline(room) {
+async function timeline(roomId) {
+    const room = __1.roomMap[roomId];
+    if (!room) {
+        console.log('No room find no finalize recordings');
+    }
     const sdpDir = path_1.default.join(__dirname, '../../sdp');
     const sdpFiles = fs_1.default.readdirSync(sdpDir).filter(f => f.startsWith(room.roomId));
     if (sdpFiles.length === 0) {
