@@ -4,6 +4,10 @@ export const mediaCodecs: any = [
     mimeType: "audio/opus",
     clockRate: 48000,
     channels: 2,
+    parameters: {
+      useinbandfec: 1, 
+      stereo: 1,       
+    }
   },
   {
     kind: "video",

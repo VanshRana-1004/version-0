@@ -12,8 +12,10 @@ function startFfmpeg(sdpPath, outputPath) {
         "-g", "60",
         "-c:a", "aac",
         "-b:a", "160k",
+        "-async", "1",
         "-movflags", "+faststart",
         "-fflags", "+genpts",
+        "-use_wallclock_as_timestamps", "1",
         outputPath
     ];
     const ffmpeg = (0, child_process_1.spawn)("ffmpeg", ffmpegArgs);

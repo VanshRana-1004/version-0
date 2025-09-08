@@ -347,6 +347,14 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
         micProducerRef.current=await sendTransportRef.current.produce({
           track: localStream.getAudioTracks()[0],
           appData: { mediaTag: 'mic-audio' },
+          codecOptions: {
+            opusMaxPlaybackRate: 48000, 
+          },
+          encodings: [
+            {
+              maxBitrate: 128000        
+            }
+          ]
         });
       }
     })  
@@ -513,6 +521,14 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
         const screenAudioProducer = await sendTransport.produce({
           track: micTrack,
           appData: { mediaTag: 'screen-audio' },
+          codecOptions: {
+            opusMaxPlaybackRate: 48000, 
+          },
+          encodings: [
+            {
+              maxBitrate: 128000        
+            }
+          ]
         });
         saudioProducerRef.current = screenAudioProducer;
         screenAudioProducer.on('trackended', () => handleShareScreen());
