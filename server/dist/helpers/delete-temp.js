@@ -18,11 +18,11 @@ async function cleanupFiles(roomId) {
             for (const file of files) {
                 const fullPath = path_1.default.join(dir, file);
                 await fs_1.default.promises.unlink(fullPath);
-                console.log(`🗑️ Deleted ${file} from ${label}`);
+                console.log(`Deleted ${file} from ${label}`);
             }
         }
         catch (err) {
-            console.error(`⚠️ Error cleaning up ${label}:`, err);
+            console.error(`Error cleaning up ${label}:`, err);
         }
     }
 }
