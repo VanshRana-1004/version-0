@@ -124,14 +124,3 @@ async function timeline(roomId) {
         ind++;
     }
 }
-/*
-  screen size : (936,512); screen overlay : (8,10)
-  peer clips size : (364,356)
-    peer overlays : (960,10),(960,382)
-  peer clips size : (304,204)
-    peer overlays : (8,536),(326,536),(642,536)
-*/
-//-1:356,crop=364:356:(in_w-356)/2:0,drawbox=x=0:y=0:w=iw:h=ih:color=white:t=2
-//-1:204,crop=304:204:(in_w-204)/2:0,drawbox=x=0:y=0:w=iw:h=ih:color=white:t=2
-// 238 166
-//-1:166,crop=238:166:(in_w-166)/2:0,drawbox=x=0:y=0:w=iw:h=ih:color=white:t=2
