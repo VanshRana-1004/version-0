@@ -33,29 +33,23 @@ async function finalUploads(roomId) {
     }
 }
 async function uploadClip(filePath, roomId, clipNum) {
-    let attempt = 0, retries = 3;
-    while (attempt < retries) {
-        try {
-            return await new Promise((resolve, reject) => {
-                cloudinary_1.v2.uploader.upload(filePath, {
-                    resource_type: "video",
-                    folder: `recordings/${roomId}`,
-                    public_id: `clip_${clipNum}`,
-                    context: { roomId, clipNum: String(clipNum) },
-                }, (error, result) => {
-                    if (error)
-                        reject(error);
-                    else
-                        resolve(result);
-                });
-            });
-        }
-        catch (err) {
-            attempt++;
-            console.warn(`Upload failed (attempt ${attempt}) for clip ${clipNum}`, err);
-            if (attempt >= retries)
-                throw err;
-            await new Promise((res) => setTimeout(res, 2000 * attempt)); // backoff
-        }
-    }
+    console.log("Uploading file:", filePath, "size:", fs_1.default.statSync(filePath).size);
+    return new Promise((resolve, reject) => {
+        cloudinary_1.v2.uploader.upload_chunked(filePath, {
+            resource_type: "video",
+            folder: `recordings/${roomId}`,
+            public_id: `clip_${clipNum}`,
+            chunk_size: 20000000,
+            context: { roomId, clipNum: String(clipNum) },
+        }, (error, result) => {
+            if (error) {
+                console.error("Upload error:", error);
+                reject(error);
+            }
+            else {
+                console.log("Cloudinary result:", result);
+                resolve(result);
+            }
+        });
+    });
 }
