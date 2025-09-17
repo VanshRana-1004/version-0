@@ -351,6 +351,12 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
 
         camProducerRef.current=await sendTransportRef.current.produce({
           track: localStream.getVideoTracks()[0],
+           encodings: [
+            {
+              maxBitrate: 1500_000, 
+              maxFramerate: 60
+            }
+          ],
           codecOptions: { videoGoogleStartBitrate: 1200 },
           appData: { mediaTag: 'cam-video' },
         });
@@ -503,16 +509,6 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
         console.log("No screen audio found, using dummy silent track");
       }
 
-      if (camTrack) {
-        const screenVideoProducer = await sendTransport.produce({
-          track: camTrack,
-          codecOptions: { videoGoogleStartBitrate: 1200 },
-          appData: { mediaTag: 'screen-video' },
-        });
-        screenProducerRef.current = screenVideoProducer;
-        screenVideoProducer.on('trackended', () => handleShareScreen());
-      }
-
       if (micTrack) {
         const screenAudioProducer = await sendTransport.produce({
           track: micTrack,
@@ -529,6 +525,17 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
         saudioProducerRef.current = screenAudioProducer;
         screenAudioProducer.on('trackended', () => handleShareScreen());
       }
+
+      if (camTrack) {
+        const screenVideoProducer = await sendTransport.produce({
+          track: camTrack,
+          codecOptions: { videoGoogleStartBitrate: 1200 },
+          appData: { mediaTag: 'screen-video' },
+        });
+        screenProducerRef.current = screenVideoProducer;
+        screenVideoProducer.on('trackended', () => handleShareScreen());
+      }
+
 
       socketRef.current.emit('screen-share', { roomId: callName.current, toggle: true, name },(res : {error? : string,toggle : boolean})=>{
         if(res.error) alert(res.error);
