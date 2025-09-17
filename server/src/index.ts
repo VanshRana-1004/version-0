@@ -191,14 +191,16 @@ io.on('connect', async (socket: Socket) => {
     })
 
     socket.on('connect-transport',async ({roomId,transportId,dtlsParameters},callback)=>{
-        try{
+      console.log('request on server to connect-transport');
+        
+      try{
             const room=roomMap[roomId];
             if(!room) return callback({error : 'room not found'})
             const transport=room.getTransportById(transportId);
             if(!transport) return callback({error : 'transport not found'})
             await transport.connect({ dtlsParameters });
             console.log(`transport connected successfully`)
-            callback({ ok: true });
+            callback({ connected: true });
         }catch (err) {
             console.error('connect-transport error:', err);
             const errorMessage =

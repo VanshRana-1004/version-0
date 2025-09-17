@@ -336,14 +336,6 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
         localVideoRef.current.srcObject = localStream;
         setStreaming(true);
 
-        camProducerRef.current=await sendTransportRef.current.produce({
-          track: localStream.getVideoTracks()[0],
-          encodings: [
-            { rid: 'h', maxBitrate: 2_000_000, scaleResolutionDownBy: 2 }
-          ],
-          codecOptions: { videoGoogleStartBitrate: 1200 },
-          appData: { mediaTag: 'cam-video' },
-        });
         micProducerRef.current=await sendTransportRef.current.produce({
           track: localStream.getAudioTracks()[0],
           appData: { mediaTag: 'mic-audio' },
@@ -356,6 +348,13 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
             }
           ]
         });
+
+        camProducerRef.current=await sendTransportRef.current.produce({
+          track: localStream.getVideoTracks()[0],
+          codecOptions: { videoGoogleStartBitrate: 1200 },
+          appData: { mediaTag: 'cam-video' },
+        });
+      
       }
     })  
   }  
@@ -507,9 +506,6 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
       if (camTrack) {
         const screenVideoProducer = await sendTransport.produce({
           track: camTrack,
-          encodings: [
-            { rid: 'h', maxBitrate: 3_000_000, scaleResolutionDownBy: 2 }
-          ],
           codecOptions: { videoGoogleStartBitrate: 1200 },
           appData: { mediaTag: 'screen-video' },
         });

@@ -226,6 +226,7 @@ io.on('connect', async (socket) => {
         });
     });
     socket.on('connect-transport', async ({ roomId, transportId, dtlsParameters }, callback) => {
+        console.log('request on server to connect-transport');
         try {
             const room = exports.roomMap[roomId];
             if (!room)
@@ -235,7 +236,7 @@ io.on('connect', async (socket) => {
                 return callback({ error: 'transport not found' });
             await transport.connect({ dtlsParameters });
             console.log(`transport connected successfully`);
-            callback({ ok: true });
+            callback({ connected: true });
         }
         catch (err) {
             console.error('connect-transport error:', err);
