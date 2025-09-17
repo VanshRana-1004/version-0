@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.startFfmpeg = startFfmpeg;
 const child_process_1 = require("child_process");
 function startFfmpeg(sdpPath, outputPath) {
+    console.log('ffmpef for ', outputPath);
     const ffmpegArgs = [
         "-protocol_whitelist", "file,udp,rtp",
         "-i", sdpPath,

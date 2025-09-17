@@ -13,8 +13,24 @@ cloudinary_1.v2.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_CLOUD_API_KEY,
     api_secret: process.env.CLOUDINARY_CLOUD_SECRET,
-    timeout: 60000
+    timeout: 300000
 });
+async function withRetry(fn, retries = 3, delayMs = 2000) {
+    let lastError;
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await fn();
+        }
+        catch (err) {
+            lastError = err;
+            console.warn(`Upload attempt ${i + 1} failed. Retrying...`);
+            if (i < retries - 1) {
+                await new Promise((res) => setTimeout(res, delayMs));
+            }
+        }
+    }
+    throw lastError;
+}
 async function finalUploads(roomId) {
     const finalRecordingDir = path_1.default.join(__dirname, '../../final-recordings');
     const finalRecordingFiles = fs_1.default.readdirSync(finalRecordingDir).filter(f => f.startsWith(roomId));
@@ -25,7 +41,7 @@ async function finalUploads(roomId) {
                 ? parseInt(lastPart.replace(".mp4", ""), 10)
                 : NaN;
             const fullPath = path_1.default.join(finalRecordingDir, file);
-            await uploadClip(fullPath, roomId, clipNum);
+            await withRetry(() => uploadClip(fullPath, roomId, clipNum));
             console.log(`${file} uploaded successfully`);
         }
         catch (e) {

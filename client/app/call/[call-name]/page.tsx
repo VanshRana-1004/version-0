@@ -146,15 +146,23 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
     return dst.stream.getAudioTracks()[0];
   } 
 
-  function createBlankVideoTrack(width = 640, height = 480) {
+  function createBlankVideoTrack(width = 1280, height = 720, fps = 30) {
     const canvas = Object.assign(document.createElement('canvas'), { width, height });
     const ctx = canvas.getContext('2d');
-    if(!ctx) return null;
-    ctx.fillStyle = 'black';
-    ctx.fillRect(0, 0, width, height);
-    const stream = canvas.captureStream();
+    if (!ctx) return null;
+
+    function draw() {
+      if(ctx){
+        ctx.fillStyle = 'black';
+        ctx.fillRect(0, 0, width, height);
+        requestAnimationFrame(draw);
+      }
+    }
+    draw();
+
+    const stream = canvas.captureStream(fps);
     return stream.getVideoTracks()[0];
-  }  
+  }
 
   async function createTransports(device : Device){
     const socket=socketRef.current;
@@ -529,13 +537,18 @@ export default function Call() {  const localStreamRef=useRef<MediaStream>(null)
       if (camTrack) {
         const screenVideoProducer = await sendTransport.produce({
           track: camTrack,
+          encodings: [
+            {
+              maxBitrate: 1500_000, 
+              maxFramerate: 60
+            }
+          ],
           codecOptions: { videoGoogleStartBitrate: 1200 },
           appData: { mediaTag: 'screen-video' },
         });
         screenProducerRef.current = screenVideoProducer;
         screenVideoProducer.on('trackended', () => handleShareScreen());
       }
-
 
       socketRef.current.emit('screen-share', { roomId: callName.current, toggle: true, name },(res : {error? : string,toggle : boolean})=>{
         if(res.error) alert(res.error);

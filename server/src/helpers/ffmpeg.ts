@@ -1,6 +1,7 @@
 import { spawn } from "child_process";
 
 export function startFfmpeg(sdpPath: string, outputPath: string) {
+  console.log('ffmpef for ',outputPath);
   const ffmpegArgs = [
     "-protocol_whitelist", "file,udp,rtp",
     "-i", sdpPath,

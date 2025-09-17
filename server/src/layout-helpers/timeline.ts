@@ -158,5 +158,4 @@ export async function timeline(roomId : string){
       }
       ind++;
     }
-
 }
